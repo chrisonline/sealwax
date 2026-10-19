@@ -1042,6 +1042,7 @@ mod tests {
                 flags: Flags::SEEN,
                 has_attachments: false,
                 thread_count: 1,
+                labels: Vec::new(),
             },
             role,
             copies: Vec::new(),

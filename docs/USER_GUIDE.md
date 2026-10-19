@@ -90,6 +90,18 @@ openssl s_client -connect 127.0.0.1:1143 -starttls imap </dev/null 2>/dev/null |
 
 If Bridge's certificate changes later (after reinstalling it, say), Sealwax stops connecting and the banner says so. Put the new fingerprint from that command in the `certificate` lines of the account's `[account.imap]` and `[account.smtp]` in `accounts.toml` ([below](#accountstoml)), then choose **Retry**.
 
+**Labels.** Bridge shows each Proton label as a folder under **Labels** (under **More folders** in the sidebar), holding the mail with that label. Sealwax keeps those folders up to date by itself and shows a message's labels wherever the message is: as chips after its subject in the message list (three at most, then "+N" for the rest) and under the sender in the reader. Like the rest of a folder's first download, a label's goes back 90 days, so older mail shows its labels once you open the label's folder and load older mail there. Labels are shown, not changed: add and remove them in Proton's own apps, and Sealwax follows at its next check. Any account with a top folder named exactly `Labels` gets the same treatment.
+
+Bridge doesn't pass on the colours labels have in Proton, so labels are grey until you give them one under `[labels]` in `config.toml`, by name, from the eight account colours. A name with spaces goes in quotes:
+
+```toml
+[labels]
+Work = "teal"
+"Family trips" = "clay"
+```
+
+The chips take the new colours as soon as the file is saved.
+
 ### Manual settings
 
 **Set up manually** (at the bottom of the assistant) shows every setting:
@@ -457,6 +469,7 @@ Sealwax has no settings window: its settings are three plain files in `~/.config
 | `[background]` | `enabled` | `true` | `true`: closing the window keeps Sealwax running; `false`: closing the window quits |
 | `[reader]` | `conversation_order` | `"oldest-first"` | `"oldest-first"`, or `"newest-first"` for the latest message on top |
 | | `reply` | `"sender"` | `"sender"`, or `"all"`: Reply answers everyone the message went to, as Reply All does |
+| `[labels]` | a label's name | none (grey) | The label's colour: `"rose"`, `"clay"`, `"olive"`, `"sage"`, `"teal"`, `"slate"`, `"iris"` or `"mauve"` ([Labels](#proton-mail-through-proton-mail-bridge)) |
 
 For example:
 

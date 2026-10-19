@@ -775,11 +775,14 @@ impl Writer {
         for merge in &merged_threads {
             threads.remove(&merge.from);
         }
+        let inserted = rows.iter().map(|row| row.id).collect();
+        let peers = label_peers(&tx, &rows, &rows)?;
+        rows.extend(peers);
         let shared = Arc::clone(&self.state.shared);
         let open = shared.registry.lock();
         let views = view_changes(&tx, &open.open, &rows, &BTreeMap::new())?;
         let event = ChangeEvent {
-            inserted: rows.iter().map(|row| row.id).collect(),
+            inserted,
             folders: folder_counts(&tx, &folders)?,
             threads: thread_counts(&tx, &threads)?,
             merged_threads,
@@ -1341,6 +1344,51 @@ fn in_view(
     state.is_some_and(|(flags, has_attachments)| {
         folders.contains(&folder) && views::passes(filter, flags, has_attachments)
     })
+}
+
+/// The other copies, in its account, of each row of `rows` that comes into a label folder, leaves
+/// one, or shows or hides there: their labels change (`views::SUMMARY_COLUMNS`), so they are
+/// rows that stay where they are and show again. Rows in `all` aren't repeated. A row whose
+/// message isn't stored has none, so call this while the rows are stored: before a delete, after
+/// an insert.
+fn label_peers(
+    tx: &Connection,
+    rows: &[RowChange],
+    all: &[RowChange],
+) -> rusqlite::Result<Vec<RowChange>> {
+    let shown = |state: Option<(u32, bool)>| state.is_some_and(|(flags, _)| flags & 264 == 0);
+    let mut seen: BTreeSet<MessageId> = all.iter().map(|row| row.id).collect();
+    let mut peers = Vec::new();
+    let mut label = tx.prepare_cached(concat!(
+        "SELECT 1 FROM folders lf WHERE lf.id = ?1 AND ",
+        views::label_folder!()
+    ))?;
+    let mut copies = tx.prepare_cached(
+        "SELECT p.id, p.folder_id, p.date, p.flags, p.has_attachments FROM messages m \
+         JOIN messages p ON p.message_id = m.message_id AND p.id <> m.id \
+         JOIN folders pf ON pf.id = p.folder_id \
+         WHERE m.id = ?1 AND m.message_id <> '' \
+           AND pf.account_id = (SELECT account_id FROM folders WHERE id = ?2)",
+    )?;
+    for row in rows {
+        if shown(row.before) == shown(row.after) || !label.exists([row.folder.0])? {
+            continue;
+        }
+        let found = copies
+            .query_map(params![row.id.0, row.folder.0], |copy| {
+                let state = Some((copy.get(3)?, copy.get(4)?));
+                Ok(RowChange {
+                    id: MessageId(copy.get(0)?),
+                    folder: FolderId(copy.get(1)?),
+                    date: copy.get(2)?,
+                    before: state,
+                    after: state,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        peers.extend(found.into_iter().filter(|copy| seen.insert(copy.id)));
+    }
+    Ok(peers)
 }
 
 /// Positions, before any change of this transaction, of the rows that leave each open view.

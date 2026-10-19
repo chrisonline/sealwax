@@ -5,9 +5,9 @@
 //! batch does.
 
 use super::{
-    RowChange, Writer, below_counts, folder_counts, free_uid, fts_doc, insert_message, overlay,
-    overlay_new, recompute_thread, removed_positions, resolve_thread, thread_counts, upsert_rows,
-    view_changes,
+    RowChange, Writer, below_counts, folder_counts, free_uid, fts_doc, insert_message, label_peers,
+    overlay, overlay_new, recompute_thread, removed_positions, resolve_thread, thread_counts,
+    upsert_rows, view_changes,
 };
 use crate::store::api::{
     ChangeEvent, FolderSpec, StoreVersion, ThreadMerge, Versioned, ViewChange, ViewDiff, ViewId,
@@ -186,6 +186,8 @@ impl Writer {
                     .map(|(stored, _)| stored.row),
             )
             .collect();
+        let peers = label_peers(&tx, &rows, &rows)?;
+        rows.extend(peers);
         let shared = Arc::clone(&self.state.shared);
         let open = shared.registry.lock();
         let positions = removed_positions(&tx, &open.open, &rows)?;
@@ -226,6 +228,7 @@ impl Writer {
         let mut merged_threads = Vec::new();
         let mut older_unread = 0;
         let mut waiting = HashMap::new();
+        let first_new = rows.len();
         for message in changes.new.iter().filter(|message| {
             message.folder == folder && message.uid.is_some_and(|uid| !gone.contains(&uid))
         }) {
@@ -253,6 +256,8 @@ impl Writer {
             inserted.push(id);
             docs.push(fts_doc(id, message));
         }
+        let peers = label_peers(&tx, &rows[first_new..], &rows)?;
+        rows.extend(peers);
         for merge in &merged_threads {
             threads.remove(&merge.from);
         }

@@ -1319,6 +1319,14 @@ impl MessageList {
         self.inner.context.skeleton.get()
     }
 
+    /// Every row shown binds its message again, as after `config.toml`'s label colours changed.
+    pub fn refresh_rows(&self) {
+        let rows = self.inner.context.bound.borrow().clone();
+        for row in rows {
+            row.refresh();
+        }
+    }
+
     fn width_changed(&self, width: f64) {
         let scale = ((width / 400.0) * 2.0).floor().max(2.0) as f32 / 2.0;
         if self.inner.context.scale.replace(scale) == scale {

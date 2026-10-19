@@ -579,7 +579,8 @@ list.sw-message-list > row:selected {
   background: var(--sw-unread-color);
 }
 
-.sw-thread-count {
+.sw-thread-count,
+.sw-label-chip {
   padding: 0 var(--sw-space-sm);
   border: var(--sw-control-border-width) solid var(--border-color);
   border-radius: var(--sw-radius-small);
@@ -593,6 +594,7 @@ list.sw-message-list > row:selected {
 listview.sw-message-list > row:hover .sw-snippet,
 listview.sw-message-list > row:hover .sw-time,
 listview.sw-message-list > row:hover .sw-thread-count,
+listview.sw-message-list > row:hover .sw-label-chip,
 listview.sw-message-list > row:hover .sw-indicator {
   color: var(--sw-hover-secondary-fg-color);
 }
@@ -600,13 +602,38 @@ listview.sw-message-list > row:hover .sw-indicator {
 listview.sw-message-list > row:selected .sw-snippet,
 listview.sw-message-list > row:selected .sw-time,
 listview.sw-message-list > row:selected .sw-thread-count,
+listview.sw-message-list > row:selected .sw-label-chip,
 listview.sw-message-list > row:selected .sw-indicator {
   color: var(--sw-selected-secondary-fg-color);
 }
 
 listview.sw-message-list > row:hover .sw-thread-count,
-listview.sw-message-list > row:selected .sw-thread-count {
+listview.sw-message-list > row:hover .sw-label-chip,
+listview.sw-message-list > row:selected .sw-thread-count,
+listview.sw-message-list > row:selected .sw-label-chip {
   border-color: alpha(currentColor, 0.3);
+}
+
+/* Label colours (config.toml's [labels]): a coloured chip takes its account colour for its
+   text and border. On a hovered or selected row its text takes the row's secondary colour, as
+   a grey chip's does (4.5:1 on the fill), and only the border keeps the label's colour. */
+.sw-label-rose { --sw-label-color: var(--sw-account-rose-color); }
+.sw-label-clay { --sw-label-color: var(--sw-account-clay-color); }
+.sw-label-olive { --sw-label-color: var(--sw-account-olive-color); }
+.sw-label-sage { --sw-label-color: var(--sw-account-sage-color); }
+.sw-label-teal { --sw-label-color: var(--sw-account-teal-color); }
+.sw-label-slate { --sw-label-color: var(--sw-account-slate-color); }
+.sw-label-iris { --sw-label-color: var(--sw-account-iris-color); }
+.sw-label-mauve { --sw-label-color: var(--sw-account-mauve-color); }
+
+.sw-label-chip.sw-label-colored {
+  color: var(--sw-label-color);
+  border-color: var(--sw-label-color);
+}
+
+listview.sw-message-list > row:hover .sw-label-chip.sw-label-colored,
+listview.sw-message-list > row:selected .sw-label-chip.sw-label-colored {
+  border-color: var(--sw-label-color);
 }
 
 .sw-star {

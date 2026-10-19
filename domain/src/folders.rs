@@ -71,6 +71,19 @@ pub fn renamed(name: &str, old: &str, new: &str, delimiter: Option<char>) -> Opt
     within(name, old, delimiter).then(|| format!("{new}{}", &name[old.len()..]))
 }
 
+/// The top folder that holds the labels: Proton Mail Bridge lists each label as a folder under
+/// it ("Labels/Work"), and a labelled message is in it beside its own folder.
+pub const LABELS: &str = "Labels";
+
+/// The label a folder stands for: what follows [`LABELS`] and the delimiter, "Work" of
+/// "Labels/Work". `None` for every other folder, the container itself included.
+pub fn label(name: &str, delimiter: Option<char>) -> Option<&str> {
+    let rest = name.strip_prefix(LABELS)?;
+    let delimiter = delimiter?;
+    rest.strip_prefix(delimiter)
+        .filter(|label| !label.is_empty())
+}
+
 /// Why a typed name can't be a folder's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NameProblem {
@@ -251,6 +264,20 @@ mod tests {
             ..placement(None, &[])
         };
         assert_eq!(check_name("a/b", &flat, never), Ok("a/b".into()));
+    }
+
+    #[test]
+    fn label_folders_are_the_ones_under_labels() {
+        assert_eq!(label("Labels/Work", Some('/')), Some("Work"));
+        assert_eq!(label("Labels/Reise/2026", Some('/')), Some("Reise/2026"));
+        assert_eq!(label("Labels.Work", Some('.')), Some("Work"));
+        assert_eq!(label("Labels", Some('/')), None);
+        assert_eq!(label("Labels/", Some('/')), None);
+        assert_eq!(label("Labels/Work", None), None);
+        assert_eq!(label("Labelsx/Work", Some('/')), None);
+        assert_eq!(label("labels/Work", Some('/')), None);
+        assert_eq!(label("Folders/Work", Some('/')), None);
+        assert_eq!(label("INBOX/Labels/Work", Some('/')), None);
     }
 
     #[test]

@@ -272,6 +272,8 @@ pub struct MessageSummary {
     pub has_attachments: bool,
     /// Messages in the conversation, each Message-ID counted once.
     pub thread_count: u32,
+    /// The labels of the label folders holding a copy of it (`crate::folders::label`), sorted.
+    pub labels: Vec<String>,
 }
 
 /// Which body alternatives a message has.

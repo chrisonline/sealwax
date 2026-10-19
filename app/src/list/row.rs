@@ -1,5 +1,6 @@
 //! The message row (S3's recommended row, DESIGN.md "Message list"): unread dot · avatar ·
-//! sender, conversation count and time · subject · two-line snippet · star and attachment.
+//! sender, conversation count and time · subject and label chips · two-line snippet · star and
+//! attachment.
 //!
 //! Binding is kept cheap, because GtkListView lays out up to ~205 rows in one frame on a jump
 //! (S3): text is cut to what can show before it is set (−15 % layout), the list has no ligatures
@@ -66,6 +67,9 @@ type QuickCallback = Rc<dyn Fn(ActionId, Target)>;
 
 /// A row's quick actions: their box and each button.
 type QuickActions = (gtk::Box, Vec<(Quick, gtk::Button)>);
+
+/// Label chips a row shows at most; a "+N" chip stands for the rest.
+const ROW_LABELS: usize = 3;
 
 /// Characters a row shows at most, at a 400 px list (S3): sender, subject, snippet.
 const CUT: (usize, usize, usize) = (48, 100, 140);
@@ -206,6 +210,10 @@ fn accessible_text(row: &MessageSummary, time: &str) -> String {
     if row.has_attachments {
         text.push_str(", has attachments");
     }
+    if !row.labels.is_empty() {
+        text.push_str(", labels ");
+        text.push_str(&row.labels.join(", "));
+    }
     text
 }
 
@@ -226,6 +234,8 @@ struct Parts {
     count: gtk::Label,
     time: gtk::Label,
     subject: gtk::Label,
+    /// The message's label chips after the subject (`crate::labels`); hidden without any.
+    labels: gtk::Box,
     snippet: gtk::Label,
     star: gtk::Image,
     clip: gtk::Image,
@@ -323,6 +333,10 @@ impl MessageRow {
         top.append(&count);
         top.append(&time);
         let subject = line("sw-subject");
+        let labels = gtk::Box::builder().spacing(4).visible(false).build();
+        let subject_line = gtk::Box::builder().spacing(6).build();
+        subject_line.append(&subject);
+        subject_line.append(&labels);
         let snippet = gtk::Label::builder()
             .xalign(0.0)
             .yalign(0.0)
@@ -339,7 +353,7 @@ impl MessageRow {
             .hexpand(true)
             .build();
         content.append(&top);
-        content.append(&subject);
+        content.append(&subject_line);
         content.append(&snippet);
         let star = gtk::Image::builder()
             .icon_name("starred-symbolic")
@@ -391,6 +405,7 @@ impl MessageRow {
             count,
             time,
             subject,
+            labels,
             snippet,
             star,
             clip,
@@ -704,6 +719,7 @@ impl MessageRow {
             cut(&row.subject, subject_chars)
         });
         parts.snippet.set_text(cut(&row.snippet, snippet_chars));
+        crate::labels::fill(&parts.labels, &row.labels, ROW_LABELS);
         if row.thread_count > 1 {
             parts.count.set_text(&row.thread_count.to_string());
             parts.count.set_visible(true);
@@ -749,6 +765,7 @@ impl MessageRow {
         parts.time.set_text(" ");
         parts.subject.set_text(" ");
         parts.snippet.set_text(" ");
+        parts.labels.set_visible(false);
         parts.count.set_visible(false);
         set_opacity(&parts.star, false);
         set_opacity(&parts.clip, false);
@@ -876,10 +893,20 @@ mod tests {
             flags: Flags::FLAGGED,
             has_attachments: true,
             thread_count: 3,
+            labels: Vec::new(),
         };
         assert_eq!(
             accessible_text(&row, "10:32"),
             "Unread, leah@example.test, no subject, 10:32, 3 messages, starred, has attachments"
+        );
+        let labelled = MessageSummary {
+            labels: vec!["Reise".into(), "Work".into()],
+            ..row
+        };
+        assert_eq!(
+            accessible_text(&labelled, "10:32"),
+            "Unread, leah@example.test, no subject, 10:32, 3 messages, starred, has attachments, \
+             labels Reise, Work"
         );
     }
 }

@@ -1,6 +1,6 @@
 //! The GTK side of one expanded message (DESIGN.md "Reader", the approved mock): a card with the
-//! sender block (avatar, name and address, "to me" or the recipients, the date with relative
-//! time, expandable details), its own remote-content banner, the body and the attachment cards.
+//! sender block (avatar, name and address, "to me" or the recipients, the message's labels, the
+//! date with relative time, expandable details), its own remote-content banner, the body and the attachment cards.
 //! The sender block is a button that collapses the card. The banner (or the line of a sender
 //! whose images load) is [`super::remote`]'s, the cards [`super::attachments`]'s and a
 //! plain-text body [`super::plain`]'s (M5's owners); each card calls them in one place, [`card`].
@@ -21,6 +21,10 @@ pub struct CardWidgets {
     pub root: gtk::Box,
     /// The sender block: a click, Enter or Space collapses the card.
     pub header: gtk::Button,
+    /// What screen readers hear for the sender block, before its labels.
+    pub header_name: String,
+    /// The message's labels, one chip each ([`fill_labels`]).
+    pub labels: gtk::Box,
     /// Where the body goes.
     pub body: gtk::Box,
     pub banner: Option<Banner>,
@@ -50,7 +54,7 @@ pub fn card(
         .css_classes(["sw-message-card", "sw-reader-card"])
         .build();
     root.set_widget_name("reader-card");
-    let (sender, header_button, details) = sender_block(header);
+    let (sender, header_button, details, header_name, labels) = sender_block(header);
     root.append(&sender);
     let banner = match &notice {
         Notice::Hidden(address) => Some(banner(reader, address)),
@@ -78,6 +82,8 @@ pub fn card(
     CardWidgets {
         root,
         header: header_button,
+        header_name,
+        labels,
         body,
         banner,
         notice,
@@ -103,8 +109,23 @@ fn label(text: &str, classes: &[&str]) -> gtk::Label {
         .build()
 }
 
-/// The sender block, the button it makes (avatar, names and date), and its details button.
-fn sender_block(header: &Header<'_>) -> (gtk::Box, gtk::Button, gtk::ToggleButton) {
+/// Shows `labels` in `chips`, one chip each, in place of what it showed, and names them in the
+/// sender block's accessible label, which starts with `name`; `chips` hides without any.
+pub fn fill_labels(chips: &gtk::Box, header: &gtk::Button, name: &str, labels: &[String]) {
+    crate::labels::fill(chips, labels, usize::MAX);
+    let spoken = if labels.is_empty() {
+        format!("{name}, expanded")
+    } else {
+        format!("{name}, labels {}, expanded", labels.join(", "))
+    };
+    header.update_property(&[gtk::accessible::Property::Label(&spoken)]);
+}
+
+/// The sender block, the button it makes (avatar, names, labels and date), its details button,
+/// what screen readers hear for the button before its labels, and the labels' box.
+fn sender_block(
+    header: &Header<'_>,
+) -> (gtk::Box, gtk::Button, gtk::ToggleButton, String, gtk::Box) {
     let headers = &header.detail.headers;
     let sender = headers.from.first().cloned().unwrap_or_default();
     let name = if sender.name.trim().is_empty() {
@@ -144,6 +165,13 @@ fn sender_block(header: &Header<'_>) -> (gtk::Box, gtk::Button, gtk::ToggleButto
         .build();
     names.append(&first_line);
     names.append(&recipients);
+    let labels = gtk::Box::builder()
+        .spacing(6)
+        .margin_top(4)
+        .halign(gtk::Align::Start)
+        .build();
+    labels.set_widget_name("reader-labels");
+    names.append(&labels);
     let date = header
         .detail
         .headers
@@ -181,9 +209,8 @@ fn sender_block(header: &Header<'_>) -> (gtk::Box, gtk::Button, gtk::ToggleButto
         .css_classes(["flat", "sw-reader-card-header"])
         .build();
     button.set_widget_name("reader-card-header");
-    button.update_property(&[gtk::accessible::Property::Label(&format!(
-        "{name}, {date_text}, expanded"
-    ))]);
+    let spoken = format!("{name}, {date_text}");
+    fill_labels(&labels, &button, &spoken, &header.detail.summary.labels);
     button.update_state(&[gtk::accessible::State::Expanded(Some(true))]);
     let row = gtk::Box::builder()
         .spacing(12)
@@ -196,7 +223,7 @@ fn sender_block(header: &Header<'_>) -> (gtk::Box, gtk::Button, gtk::ToggleButto
         .build();
     block.append(&row);
     block.append(&details);
-    (block, button, toggle)
+    (block, button, toggle, spoken, labels)
 }
 
 fn details_grid(detail: &MessageDetail, date: i64, zone: &glib::TimeZone) -> gtk::Grid {

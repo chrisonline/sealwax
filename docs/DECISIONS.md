@@ -924,6 +924,18 @@ WebKitGTK 2.54 removed the `LinkDNSPrefetchEnabled` preference ([310198@main](ht
 
 **Status:** Accepted — the user's word, 2026-10-13 ("Build it for 0.4.8, loopback only"), on issue [#9](https://github.com/PixDevsApps/sealwax/issues/9) (Proton Mail Bridge). Pinned certificates move from 1.x into 0.4.8 and 1.0, **for servers on this computer only** (`localhost`, 127.0.0.0/8, `::1`), with Proton set up through its Bridge ([ADR-007 amendment](#adr-007-amendment--a-pinned-certificate-for-a-server-on-this-computer-2026-10-13)). Pinning a server elsewhere stays out.
 
+### ADR-013 amendment — labels shown (Proton Mail Bridge) (2026-10-19)
+
+**Status:** Accepted — the user's word, 2026-10-19 ("Show labels (Recommended)", "Row and reader (Recommended)", "Yes, all of them (Recommended)"), asking for Proton's labels on the inbox and on the messages.
+
+**Decision:** labels are shown, read-only. Proton Mail Bridge lists each label as a folder under a top folder `Labels` and puts a labelled message in it beside its own folder, with the same Message-ID; Bridge sends no keywords for labels. A **label folder** is a selectable folder whose name is `Labels`, the delimiter and at least one more character, case as written (`domain::folders::label`; any account, not only Bridge's). Label folders **sync by themselves** like the role folders (`domain::sync::Facts::label`), with the usual first-sync window. A message's **labels** are those of its account's label folders holding a shown copy of its Message-ID (`MessageSummary::labels`, sorted, from a subquery in `views::SUMMARY_COLUMNS` on the Message-ID index; no schema change). The list row shows them as chips after the subject, the reader's sender block too (DESIGN.md "Message list"). When a copy comes into a label folder, leaves one or shows or hides there (sync, first sync, the overlay's moves), the writer reports the message's other copies as changed rows of the open views (`writer::label_peers`), so the Inbox's row follows; the reader re-reads the conversation as before (the copies share its thread).
+
+**Colours (the same day, the user's word: "yes"):** Bridge doesn't pass on Proton's label colours: its IMAP server lists no METADATA (RFC 5464), the only extension that could carry them, and LIST gives a label folder its name and attributes alone. Reading them from Proton's API would need the user's Proton sign-in, which Sealwax doesn't hold. So `config.toml` gains `[labels]`: each key a label's name as the folder spells it, each value one of the eight account colours (ADR-009's amendment of 2026-10-08), read with the file's error style; a label without one is grey. The app keeps the colours (`app::labels`) and fills the list's rows and the reader's cards again when they change.
+
+**Not chosen:** adding and removing labels from Sealwax (a copy into the label folder, an expunge there, through the op queue) — a later decision; labels only on the reader; label folders synced only once opened.
+
+**Consequences:** each label folder costs a folder pass when its STATUS changes. A message older than its label folder's window shows no label until older mail is loaded there. A label folder removed or renamed on the server changes the labels the open list shows only when its rows are read again (the next change to them, or reopening the view).
+
 ## ADR-014 — WYSIWYG composer in an editable WebKit view (2026-10-04)
 
 **Status:** The WYSIWYG format is accepted — user decision, 2026-10-04 (over a Markdown composer). The mechanism is proposed; S7 confirms it.

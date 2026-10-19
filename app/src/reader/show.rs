@@ -722,9 +722,19 @@ fn entry_order(entry: &Entry) -> (i64, MessageId) {
 fn update_item(item: &mut Item, message: &ConversationMessage) {
     let unread_before = !item.message.summary.flags.is_seen();
     let unread_now = !message.summary.flags.is_seen();
+    let labels_changed = item.message.summary.labels != message.summary.labels;
     item.message = message.clone();
     if unread_before != unread_now {
         fill_row(&item.row, &message.summary, super::now());
+    }
+    if labels_changed && let Some(card) = &item.card {
+        let widgets = &card.widgets;
+        page::fill_labels(
+            &widgets.labels,
+            &widgets.header,
+            &widgets.header_name,
+            &message.summary.labels,
+        );
     }
 }
 

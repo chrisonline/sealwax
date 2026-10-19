@@ -389,6 +389,25 @@ impl Reader {
         }
     }
 
+    /// `config.toml`'s label colours changed: the shown cards' label chips take them.
+    pub fn labels_recolored(&self) {
+        let shown = self.inner.shown.borrow();
+        let Some(page) = shown.as_ref() else {
+            return;
+        };
+        for item in page.items() {
+            if let Some(card) = &item.card {
+                let widgets = &card.widgets;
+                page::fill_labels(
+                    &widgets.labels,
+                    &widgets.header,
+                    &widgets.header_name,
+                    &item.message.summary.labels,
+                );
+            }
+        }
+    }
+
     /// The shown conversation, shown again from the store.
     fn show_again(&self) {
         let shown = self

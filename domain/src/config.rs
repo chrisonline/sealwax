@@ -4,11 +4,14 @@
 //! file is the defaults. `keys.toml` shares the error type and helpers (`crate::keymap`).
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::Range;
 
 use toml::Spanned;
 use toml::de::{DeTable, DeValue};
+
+use crate::account::AccountColor;
 
 pub const CONFIG_FILE: &str = "config.toml";
 pub const KEYS_FILE: &str = "keys.toml";
@@ -243,6 +246,10 @@ pub struct Config {
     pub notifications: Notifications,
     pub background: Background,
     pub reader: ReaderSettings,
+    /// `[labels]`: the colour each label shows in, by its name as the label folder spells it
+    /// (`crate::folders::label`); labels not listed have none. Proton Mail Bridge doesn't tell
+    /// Proton's own colours.
+    pub labels: BTreeMap<String, AccountColor>,
 }
 
 const APPEARANCE_SETTINGS: [&str; 3] = ["corner_radius", "chrome_font", "reading_font"];
@@ -250,13 +257,14 @@ const STORAGE_SETTINGS: [&str; 2] = ["cache_size", "prefetch_days"];
 const NOTIFICATION_SETTINGS: [&str; 2] = ["enabled", "show"];
 const BACKGROUND_SETTINGS: [&str; 1] = ["enabled"];
 const READER_SETTINGS: [&str; 2] = ["conversation_order", "reply"];
-const SECTIONS: [&str; 6] = [
+const SECTIONS: [&str; 7] = [
     "appearance",
     "oauth",
     "storage",
     "notifications",
     "background",
     "reader",
+    "labels",
 ];
 const PROVIDERS: [&str; 1] = ["microsoft"];
 
@@ -607,6 +615,34 @@ impl Reader<'_> {
     }
 }
 
+impl Reader<'_> {
+    fn labels(&mut self, table: &DeTable<'_>, labels: &mut BTreeMap<String, AccountColor>) {
+        for (key, value) in entries(table) {
+            let name = key.get_ref().as_ref();
+            match value.get_ref().as_str().and_then(AccountColor::from_name) {
+                Some(color) => {
+                    labels.insert(name.to_owned(), color);
+                }
+                None => {
+                    let names: Vec<String> = AccountColor::ALL
+                        .iter()
+                        .map(|color| format!("\"{}\"", color.name()))
+                        .collect();
+                    let (last, rest) = names.split_last().expect("there are colours");
+                    self.error(
+                        value.span(),
+                        format!(
+                            "a label's colour is one of {} or {last}, not {}",
+                            rest.join(", "),
+                            shown(value.get_ref())
+                        ),
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn whole_number(value: &DeValue<'_>) -> Option<i64> {
     match value {
         DeValue::Integer(integer) => i64::from_str_radix(integer.as_str(), integer.radix()).ok(),
@@ -675,6 +711,11 @@ impl Config {
                 "reader" => {
                     if let Some(table) = reader.table(value, name) {
                         reader.reader(table, &mut config.reader);
+                    }
+                }
+                "labels" => {
+                    if let Some(table) = reader.table(value, name) {
+                        reader.labels(table, &mut config.labels);
                     }
                 }
                 _ => match section_of(name) {
@@ -753,7 +794,14 @@ pub fn default_config_file() -> String {
          # conversation_order = \"oldest-first\"\n\
          # Whom Reply (r, Ctrl+R) answers: \"sender\", or \"all\" to answer everyone the\n\
          # message went to, as Reply All does; Reply to Sender then answers the sender alone.\n\
-         # reply = \"sender\"\n"
+         # reply = \"sender\"\n\
+         \n\
+         [labels]\n\
+         # The colour of each label (Proton Mail Bridge's Labels folder) in the message list\n\
+         # and the reader, by its name: \"rose\", \"clay\", \"olive\", \"sage\", \"teal\", \"slate\",\n\
+         # \"iris\" or \"mauve\". A name with spaces goes in quotes. Labels not listed are grey.\n\
+         # Work = \"teal\"\n\
+         # \"Family trips\" = \"clay\"\n"
     )
 }
 
@@ -767,6 +815,32 @@ mod tests {
             .into_iter()
             .map(|error| error.to_string())
             .collect()
+    }
+
+    #[test]
+    fn labels_take_the_account_colours() {
+        let config =
+            Config::parse("[labels]\nWork = \"teal\"\n\"Family trips\" = \"Clay\"\n").unwrap();
+        assert_eq!(
+            config.labels,
+            BTreeMap::from([
+                ("Family trips".to_owned(), AccountColor::Clay),
+                ("Work".to_owned(), AccountColor::Teal),
+            ])
+        );
+        assert_eq!(
+            errors("[labels]\nWork = \"red\"\nHome = 3\n"),
+            [
+                "line 2, column 8: a label's colour is one of \"rose\", \"clay\", \"olive\", \
+                 \"sage\", \"teal\", \"slate\", \"iris\" or \"mauve\", not \"red\"",
+                "line 3, column 8: a label's colour is one of \"rose\", \"clay\", \"olive\", \
+                 \"sage\", \"teal\", \"slate\", \"iris\" or \"mauve\", not 3",
+            ]
+        );
+        assert_eq!(
+            Config::parse(&default_config_file()).unwrap().labels,
+            BTreeMap::new()
+        );
     }
 
     #[test]

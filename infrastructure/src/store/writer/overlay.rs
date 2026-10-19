@@ -4,8 +4,8 @@
 //! never drops an overlay whose op is pending.
 
 use super::{
-    RowChange, State, folder_counts, recompute_thread, removed_positions, thread_counts,
-    view_changes,
+    RowChange, State, folder_counts, label_peers, recompute_thread, removed_positions,
+    thread_counts, view_changes,
 };
 use crate::store::api::{ChangeEvent, StoreVersion};
 use crate::store::ops_api::{OpId, OpsRefusal, RefusedChange};
@@ -502,6 +502,8 @@ impl State {
                 After::Deleted => rows.push(change(row.folder, before, None)),
             }
         }
+        let peers = label_peers(&tx, &rows, &rows)?;
+        rows.extend(peers);
         let shared = Arc::clone(&self.shared);
         let open = shared.registry.lock();
         let positions = removed_positions(&tx, &open.open, &rows)?;

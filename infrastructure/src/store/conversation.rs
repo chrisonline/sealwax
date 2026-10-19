@@ -188,6 +188,7 @@ mod tests {
                 flags: Flags::NONE,
                 has_attachments: false,
                 thread_count: 1,
+                labels: Vec::new(),
             },
             stored_flags: 0,
             role,

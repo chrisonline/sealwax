@@ -1030,6 +1030,14 @@ impl AppState {
                 reader.set_conversation_order(prefs.config().reader.conversation_order);
                 reader.set_default_reply(prefs.config().reader.reply);
             }
+            if crate::labels::set_colors(&prefs.config().labels) {
+                if let Some(list) = self.list() {
+                    list.refresh_rows();
+                }
+                if let Some(reader) = self.reader() {
+                    reader.labels_recolored();
+                }
+            }
             // A client ID added or removed makes Microsoft sign-in available or not.
             setup::refresh();
             self.send_microsoft_client();
@@ -2317,6 +2325,7 @@ impl AppState {
         if let Some(prefs) = self.preferences() {
             reader.set_conversation_order(prefs.config().reader.conversation_order);
             reader.set_default_reply(prefs.config().reader.reply);
+            crate::labels::set_colors(&prefs.config().labels);
         }
         reader.connect_engine(&self.engine);
         window.set_reader_toolbar(&reader.toolbar());

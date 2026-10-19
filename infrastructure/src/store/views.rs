@@ -233,8 +233,40 @@ fn count_in(conn: &Connection, folder: FolderId, filter: ViewFilter) -> rusqlite
     count(conn, &[folder], filter)
 }
 
-pub(crate) const SUMMARY_COLUMNS: &str = "m.id, m.folder_id, m.thread_id, m.from_name, \
-     m.from_addr, m.subject, m.snippet, m.date, m.flags, m.has_attachments, t.message_count";
+/// SQL that holds for a label folder `lf`, as `sealwax_domain::folders::label` judges one; its
+/// label is `substr(lf.name, 8)`.
+macro_rules! label_folder {
+    () => {
+        "lf.selectable = 1 AND length(lf.delimiter) = 1 AND length(lf.name) > 7 \
+         AND substr(lf.name, 1, 7) = 'Labels' || lf.delimiter"
+    };
+}
+pub(crate) use label_folder;
+
+/// A row's columns; the last is its labels: those of the label folders of its account that hold
+/// a copy of it (its Message-ID) the list would show, apart by U+001F.
+pub(crate) const SUMMARY_COLUMNS: &str = concat!(
+    "m.id, m.folder_id, m.thread_id, m.from_name, m.from_addr, m.subject, m.snippet, m.date, \
+     m.flags, m.has_attachments, t.message_count, \
+     (SELECT group_concat(substr(lf.name, 8), char(31)) FROM messages lm \
+       JOIN folders lf ON lf.id = lm.folder_id \
+      WHERE m.message_id <> '' AND lm.message_id = m.message_id AND lm.flags & 264 = 0 \
+        AND lf.account_id = (SELECT account_id FROM folders WHERE id = m.folder_id) AND ",
+    label_folder!(),
+    ")"
+);
+
+/// The labels column as [`MessageSummary::labels`] holds them: sorted, each once.
+fn labels(column: Option<String>) -> Vec<String> {
+    let mut labels: Vec<String> = column
+        .iter()
+        .flat_map(|column| column.split('\u{1f}'))
+        .map(str::to_owned)
+        .collect();
+    labels.sort_by_cached_key(|label| (label.to_lowercase(), label.clone()));
+    labels.dedup();
+    labels
+}
 
 pub(crate) fn summary_row(row: &Row<'_>) -> rusqlite::Result<MessageSummary> {
     Ok(MessageSummary {
@@ -249,6 +281,7 @@ pub(crate) fn summary_row(row: &Row<'_>) -> rusqlite::Result<MessageSummary> {
         flags: sealwax_domain::model::Flags::from_bits(row.get::<_, u32>(8)?),
         has_attachments: row.get(9)?,
         thread_count: row.get(10)?,
+        labels: labels(row.get(11)?),
     })
 }
 

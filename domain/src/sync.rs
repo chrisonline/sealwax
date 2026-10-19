@@ -24,6 +24,9 @@ pub struct Facts<'a> {
     /// The folder was synced before (it has a UIDVALIDITY), for example because the user opened
     /// it.
     pub synced_before: bool,
+    /// The folder stands for a label (`crate::folders::label`): its messages say which labels
+    /// the messages elsewhere carry.
+    pub label: bool,
 }
 
 /// The roles that sync without being opened.
@@ -36,8 +39,8 @@ pub const SYNCED_ROLES: [FolderRole; 6] = [
     FolderRole::Trash,
 ];
 
-/// INBOX and the role folders sync by themselves, and so does every folder synced before
-/// (opened by the user once). Other folders show their STATUS counts until opened. A folder with
+/// INBOX, the role folders and the label folders sync by themselves, and so does every folder
+/// synced before (opened by the user once). Other folders show their STATUS counts until opened. A folder with
 /// `\All` (Gmail's All Mail, which holds every other folder's messages again) never syncs by
 /// itself, even after it was opened.
 pub fn plan(facts: Facts<'_>) -> Plan {
@@ -50,7 +53,7 @@ pub fn plan(facts: Facts<'_>) -> Plan {
         Plan::Skip
     } else if all {
         Plan::Counts
-    } else if SYNCED_ROLES.contains(&facts.role) || facts.synced_before {
+    } else if SYNCED_ROLES.contains(&facts.role) || facts.synced_before || facts.label {
         Plan::Sync
     } else {
         Plan::Counts
@@ -139,6 +142,7 @@ mod tests {
             attributes,
             selectable: true,
             synced_before,
+            label: false,
         }
     }
 
@@ -154,6 +158,20 @@ mod tests {
             plan(facts(FolderRole::Other, &flagged, false)),
             Plan::Counts
         );
+    }
+
+    #[test]
+    fn label_folders_sync_by_themselves() {
+        let label = Facts {
+            label: true,
+            ..facts(FolderRole::Other, &[], false)
+        };
+        assert_eq!(plan(label), Plan::Sync);
+        let container = Facts {
+            selectable: false,
+            ..label
+        };
+        assert_eq!(plan(container), Plan::Skip);
     }
 
     #[test]

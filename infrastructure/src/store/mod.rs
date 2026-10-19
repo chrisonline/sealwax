@@ -62,6 +62,9 @@ mod compose_tests;
 mod folders_tests;
 
 #[cfg(test)]
+mod labels_tests;
+
+#[cfg(test)]
 mod remote_tests;
 
 #[cfg(test)]

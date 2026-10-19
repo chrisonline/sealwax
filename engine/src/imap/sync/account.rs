@@ -98,6 +98,7 @@ fn wanted(id: FolderId, folder: &ListedFolder, state: &FolderSync, options: &Syn
         attributes: &folder.attributes,
         selectable: folder.selectable,
         synced_before: state.uidvalidity.is_some(),
+        label: sealwax_domain::folders::label(&folder.name, folder.delimiter).is_some(),
     };
     plan(facts) == Plan::Sync
         && options
