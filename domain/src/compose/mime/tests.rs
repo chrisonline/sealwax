@@ -664,6 +664,7 @@ fn a_planned_reply_builds_and_reads_back_as_a_draft() {
         name: "Kari Nordmann".into(),
         address: "kari@example.com".into(),
         signature: Some("Kari".into()),
+        signature_html: None,
     }];
     let plan = reply::plan(
         &reply::Original::parse(raw.as_bytes()),
@@ -786,4 +787,70 @@ proptest! {
         check(&built.transmitted, Which::Transmitted, &draft, &[]);
         check(&built.sent_copy, Which::Sent, &draft, &[]);
     }
+}
+
+/// An HTML signature with a logo (issue #6), as the app prepares a new draft: the signature
+/// built from its file, its `data:` logo made a part by `data_images`, then sent. The logo goes
+/// as an inline part the HTML shows by `cid:`, and the signature keeps its styles.
+#[test]
+fn an_html_signature_sends_its_logo_inline() {
+    use crate::account::{HtmlSignature, Identity};
+    use crate::compose::{data_images, signature_html};
+    use std::collections::HashMap;
+
+    let logo = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR logo".to_vec();
+    let file = "<table style=\"font-family: Arial\"><tr><td><img src=\"logo.png\" alt=\"Logo\">\
+                </td><td><span style=\"color: #1a5c2e\">Kari Nordmann</span></td></tr></table>";
+    let signature = signature_html::build(
+        file,
+        None,
+        &HashMap::from([("logo.png".into(), logo.clone())]),
+    )
+    .unwrap();
+    let sender = Identity {
+        name: "Kari Nordmann".into(),
+        address: "kari@example.com".into(),
+        signature: Some("Kari".into()),
+        signature_html: Some(HtmlSignature {
+            path: "signatures/kari.html".into(),
+            loaded: Some(Ok(signature)),
+        }),
+    };
+    let mut draft = crate::compose::new_draft(AccountId(1), &sender, ID.into());
+    draft.to = vec![Address::new("Ola Nordmann", "ola@example.org")];
+    draft.subject = "Hei".into();
+    let (html, images) = data_images::extract(&draft.html, || Some("logo1@example.com".into()));
+    assert_eq!(images.len(), 1);
+    draft.html = html;
+    draft.parts = vec![part(
+        "signature.png",
+        "image/png",
+        &logo,
+        Some("logo1@example.com"),
+    )];
+    assert!(
+        draft
+            .html
+            .contains("<img src=\"cid:logo1@example.com\" alt=\"Logo\">")
+    );
+    assert!(
+        draft
+            .html
+            .contains("<span style=\"color: #1a5c2e\">Kari Nordmann</span>")
+    );
+    assert!(!draft.html.contains("data:"));
+
+    let built = build(&draft, DATE, &[logo.as_slice()]).unwrap();
+    let message = MessageParser::default().parse(&built.transmitted).unwrap();
+    let html = message.body_html(0).unwrap();
+    assert!(html.contains("cid:logo1@example.com"));
+    assert!(html.contains("color: #1a5c2e"));
+    let inline = message
+        .parts
+        .iter()
+        .find(|part| part.content_id() == Some("logo1@example.com"))
+        .expect("the logo goes as an inline part");
+    assert_eq!(inline.contents(), logo.as_slice());
+    let text = message.body_text(0).unwrap();
+    assert!(text.contains("Kari Nordmann"));
 }

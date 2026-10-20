@@ -279,7 +279,10 @@ pub struct AccountSettings {
     pub username: String,
     pub auth: AuthMethod,
     /// The signature under mail sent from `address` (M6, ML-070): plain text, `None` for none.
+    /// With an HTML signature, the one used when its file can't be read.
     pub signature: Option<String>,
+    /// The HTML signature under mail sent from `address` (issue #6): `signature_html`.
+    pub signature_html: Option<HtmlSignature>,
     /// The other addresses the account sends from (aliases, PRD A6), from
     /// `[[account.identity]]` (M6, ML-070).
     pub identities: Vec<Identity>,
@@ -299,8 +302,33 @@ pub struct Identity {
     /// The sender name; the account's when the file leaves it out.
     pub name: String,
     pub address: String,
-    /// Plain text; `None` for none.
+    /// Plain text; `None` for none. With an HTML signature, the one used when its file can't
+    /// be read.
     pub signature: Option<String>,
+    /// The HTML signature (issue #6): `signature_html`.
+    pub signature_html: Option<HtmlSignature>,
+}
+
+/// An HTML signature (issue #6): its file, as `accounts.toml` names it, and what the app made of
+/// it. Its images lie beside the file; Sealwax reads both each time a message is started, so
+/// changes to them apply to the next message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HtmlSignature {
+    /// `signature_html` as written: a path relative to Sealwax's config folder, or absolute.
+    pub path: String,
+    /// The signature built from the file (`compose::signature_html`), or why it couldn't be;
+    /// `None` until the app reads it, as in `accounts.toml`'s own reading.
+    pub loaded: Option<Result<crate::compose::identity::Signature, String>>,
+}
+
+impl HtmlSignature {
+    /// A signature `accounts.toml` names, not read yet.
+    pub fn unread(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            loaded: None,
+        }
+    }
 }
 
 /// The login name a detected setting expects, relative to the address.

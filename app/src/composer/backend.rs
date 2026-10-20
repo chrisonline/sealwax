@@ -33,9 +33,9 @@ pub struct Sender {
     pub label: String,
     /// The sender name and address the message goes out with.
     pub address: Address,
-    /// Its signature, plain text (`accounts.toml`); the composer swaps it in when the sender
-    /// changes.
-    pub signature: Option<String>,
+    /// Its signature (`accounts.toml`: its HTML signature, else its plain one); the composer
+    /// swaps it in when the sender changes.
+    pub signature: Option<sealwax_domain::compose::identity::Signature>,
 }
 
 /// What a composer window starts from.
@@ -48,6 +48,9 @@ pub struct Prepared {
     pub senders: Vec<Sender>,
     /// The header's title: "New message", "Reply", "Forward" or "Draft".
     pub title: String,
+    /// What the composer tells the user as it opens: an HTML signature that couldn't be used
+    /// (issue #6), whose plain signature stands in.
+    pub notices: Vec<String>,
 }
 
 /// An address the user has written to or heard from, for the suggestions.
@@ -288,7 +291,7 @@ impl Backend for StandIn {
                     account: account.id,
                     label: identity.name.clone(),
                     address: Address::new(identity.name.clone(), identity.address.clone()),
-                    signature: identity.signature.clone(),
+                    signature: sealwax_domain::compose::identity::signature_of(identity),
                 }));
             }
             senders.extend(identities.into_iter().map(|sender| Sender {
@@ -309,6 +312,7 @@ impl Backend for StandIn {
                 draft,
                 senders,
                 title,
+                notices: Vec::new(),
             })
         })
     }

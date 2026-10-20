@@ -8,11 +8,13 @@ fn senders() -> Vec<Identity> {
             name: "Ada Lovelace".into(),
             address: "ada@example.test".into(),
             signature: Some("Ada".into()),
+            signature_html: None,
         },
         Identity {
             name: "Ada at the board".into(),
             address: "board@example.test".into(),
             signature: None,
+            signature_html: None,
         },
     ]
 }

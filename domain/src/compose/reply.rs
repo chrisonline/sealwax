@@ -164,6 +164,7 @@ pub fn plan(original: &Original, kind: ReplyKind, senders: &[Identity]) -> Reply
             name: String::new(),
             address: String::new(),
             signature: None,
+            signature_html: None,
         });
     let (to, cc) = recipients(headers, kind, senders);
     let subject = match kind {
@@ -254,11 +255,7 @@ impl Reply {
     /// The draft's HTML: what the user typed (an empty line when nothing yet), the sender's
     /// signature, then the quote.
     pub fn html(&self, typed_html: &str) -> String {
-        let signature = self
-            .sender
-            .signature
-            .as_deref()
-            .and_then(identity::signature);
+        let signature = identity::signature_of(&self.sender);
         super::body(typed_html, signature.as_ref(), Some(&self.quote_html))
     }
 
@@ -293,10 +290,7 @@ impl Reply {
 
     /// The signature under the typed text, for a composer that shows it apart.
     pub fn signature(&self) -> Option<Signature> {
-        self.sender
-            .signature
-            .as_deref()
-            .and_then(identity::signature)
+        identity::signature_of(&self.sender)
     }
 }
 

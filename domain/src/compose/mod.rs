@@ -8,11 +8,13 @@
 
 pub mod address;
 pub mod clean;
+pub mod data_images;
 pub mod identity;
 pub mod ids;
 pub mod mime;
 pub mod quote;
 pub mod reply;
+pub mod signature_html;
 pub mod stored;
 pub mod text;
 
@@ -46,7 +48,7 @@ pub fn body(typed_html: &str, signature: Option<&Signature>, quote: Option<&str>
 /// A new, empty draft from `sender` (one of [`identity::senders`]) with its signature;
 /// `message_id` from [`ids::message_id`].
 pub fn new_draft(account: AccountId, sender: &Identity, message_id: String) -> Draft {
-    let signature = sender.signature.as_deref().and_then(identity::signature);
+    let signature = identity::signature_of(sender);
     Draft {
         account,
         from: identity::from_address(sender),

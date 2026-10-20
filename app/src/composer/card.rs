@@ -1294,7 +1294,11 @@ impl Inner {
             draft,
             senders,
             title,
+            notices,
         } = prepared;
+        for notice in &notices {
+            self.toast(notice);
+        }
         self.id.set(Some(id));
         self.account.set(draft.account);
         self.request_title.replace(title);
@@ -1392,9 +1396,8 @@ impl Inner {
         }
         let signature = sender
             .signature
-            .as_deref()
-            .and_then(sealwax_domain::compose::identity::signature)
-            .map(|signature| signature.html)
+            .as_ref()
+            .map(|signature| signature.html.clone())
             .unwrap_or_default();
         self.editor.eval_detached(&format!(
             "sealwaxComposer.setSignature({})",

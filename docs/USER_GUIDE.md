@@ -280,6 +280,14 @@ Pasted text keeps simple formatting and loses the rest; **Paste as Plain Text** 
 
 **Identities and signatures** are set in `accounts.toml` ([below](#accountstoml)): `signature` on an account, and an `[[account.identity]]` table for each other address the account sends from, with its own name and signature. A signature is plain text, put under what you write after a `-- ` line.
 
+**HTML signatures.** For a designed signature, with your logo, colours and links, write it as an HTML file and name it with `signature_html` on the account or the identity, for example `signature_html = "signatures/work/signature.html"`; a path that doesn't start with `/` is in Sealwax's config folder (`~/.config/sealwax/`). Put its images beside it and name them by their path from there (`<img src="logo.png">`): Sealwax sends them inside the message, so people see the logo without loading anything from the web. Images on the web (`https://…`) aren't used.
+
+- **What it keeps:** text, links (web, `mailto:` and `tel:`), images, lists and tables, `span`, and inline `style` with colours, fonts, sizes, spacing, borders and alignment. Everything else goes: scripts, forms, `<style>` blocks, `url(…)` in styles, positioning. Style with `<span style="…">`: `<font>` and `<center>` lose their look and keep their text.
+- **Images:** PNG, JPEG, GIF or WebP, at most 1 MiB each and 4 MiB together, inside the signature's folder (no `..`, no links out of it). The file itself is at most 256 KiB.
+- **When it's read:** each time you start a message, so a change to the file applies to the next one. A draft keeps the signature it was started with.
+- **When it can't be used** (a missing file or image, an image on the web), the composer says why as it opens, and your plain `signature` stands in. The plain text part of the message is made from the HTML signature's text.
+- Changing the sender in the composer swaps the signature, HTML or plain, as before. You can still edit the signature in the message you're writing.
+
 **Sending.** Send closes the composer and the main window shows "Message queued" with **Undo** for 7 seconds (`z` and Ctrl+Z work too); Undo puts the draft back in a composer. Then "Message sent". Without a network, the message waits in the outbox and goes when the network is back. A copy goes into the Sent folder, unless the server files one itself (Outlook.com and Microsoft 365 do).
 
 - **Sent at most once.** If Sealwax stopped, the connection broke, or the server's answer couldn't be read while a message was going out, Sealwax can't know whether the server got it, and the banner says which of these happened, naming the message by its subject, account and time ("“Quarterly report” from Work (today at 14:32)"). Instead of sending it again by itself, it shows a banner, "A message may have been sent", with **Choose…**: Send Again, It Was Sent, Back to Drafts or Later. Look in your Sent folder, or ask a recipient, before you send it again.
@@ -548,6 +556,7 @@ address = "board@example.com"
 | | `username` | the address | The login name, when it isn't the address |
 | | `auth` | `"password"` | `"password"` (a password or app password, kept in the keyring) or `"microsoft"` (Sign in with Microsoft) |
 | | `signature` | none | Plain text put under your messages after a `-- ` line; at most 10,000 characters |
+| | `signature_html` | none | An HTML signature in place of `signature`, its file's path (relative to Sealwax's config folder, or absolute); its images lie beside it ([HTML signatures](#writing-mail)). `signature` stands in when it can't be read |
 | `[account.imap]` | `host` | — (required) | The IMAP server |
 | | `port` | 993 with `"tls"`, 143 with `"starttls"` | |
 | | `security` | `"tls"` | `"tls"` or `"starttls"`; there is no setting without encryption |
@@ -563,6 +572,7 @@ address = "board@example.com"
 | `[[account.identity]]` | `address` | — (required) | Another address the account sends from |
 | | `name` | the account's name | |
 | | `signature` | none | That identity's signature |
+| | `signature_html` | none | That identity's HTML signature |
 
 A line that looks like a password, secret or token is a mistake anywhere in the file: those live only in the keyring.
 

@@ -179,6 +179,7 @@ impl TestEngine {
             username: user.into(),
             auth: AuthMethod::Password,
             signature: None,
+            signature_html: None,
             identities: Vec::new(),
         };
         self.send(Command::AddAccount {

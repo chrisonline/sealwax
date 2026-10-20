@@ -9,5 +9,6 @@ pub mod logging;
 pub mod omarchy;
 pub mod rules;
 pub mod settings_files;
+pub mod signatures;
 pub mod store;
 pub mod xdg;

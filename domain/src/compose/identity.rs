@@ -1,6 +1,8 @@
-//! The addresses an account sends from and their signatures (ML-070, PRD A6). Signatures are
-//! plain text in 1.0 (accepted at the M6 gate): the composer shows them below the body after a `-- ` line,
-//! inside a `div` of class [`SIGNATURE_CLASS`] so it can swap them when the sender changes.
+//! The addresses an account sends from and their signatures (ML-070, PRD A6). A signature is
+//! plain text (accepted at the M6 gate), shown below the body after a `-- ` line, or an HTML
+//! signature the app read from its file (issue #6, [`super::signature_html`]); either sits
+//! inside a `div` of class [`SIGNATURE_CLASS`] so the composer can swap it when the sender
+//! changes.
 
 use super::address;
 use super::clean::SIGNATURE_CLASS;
@@ -16,6 +18,7 @@ pub fn senders(account: &AccountSettings) -> Vec<Identity> {
         name: account.name.clone(),
         address: account.address.clone(),
         signature: account.signature.clone(),
+        signature_html: account.signature_html.clone(),
     };
     let mut out = vec![own];
     for identity in &account.identities {
@@ -76,6 +79,17 @@ impl fmt::Debug for Signature {
     }
 }
 
+/// The signature mail sent as `identity` carries: its HTML signature once the app has read it,
+/// else (none, or its file couldn't be read) its plain one.
+pub fn signature_of(identity: &Identity) -> Option<Signature> {
+    let html = identity
+        .signature_html
+        .as_ref()
+        .and_then(|html| html.loaded.clone())
+        .and_then(Result::ok);
+    html.or_else(|| identity.signature.as_deref().and_then(signature))
+}
+
 /// The separator line in a signature's HTML: `--` and a no-break space, which survives HTML's
 /// whitespace rules; the plain-text part turns the line back into `-- ` (RFC 3676 4.3).
 pub const SEPARATOR_HTML: &str = "<div>--&nbsp;</div>";
@@ -121,16 +135,19 @@ mod tests {
             username: "ada@example.test".into(),
             auth: AuthMethod::Password,
             signature: Some("Ada".into()),
+            signature_html: None,
             identities: vec![
                 Identity {
                     name: "Ada at the board".into(),
                     address: "board@example.test".into(),
                     signature: None,
+                    signature_html: None,
                 },
                 Identity {
                     name: "Duplicate".into(),
                     address: "ADA@example.test".into(),
                     signature: None,
+                    signature_html: None,
                 },
             ],
         }

@@ -143,6 +143,7 @@ impl Running {
             username: "folders@example.test".into(),
             auth: AuthMethod::Password,
             signature: None,
+            signature_html: None,
             identities: Vec::new(),
         };
         self.send(Command::AddAccount {
@@ -653,6 +654,7 @@ async fn a_pop3_accounts_local_folders_change_at_once() {
             username: "pop".into(),
             auth: AuthMethod::Password,
             signature: None,
+            signature_html: None,
             identities: Vec::new(),
         }],
     });

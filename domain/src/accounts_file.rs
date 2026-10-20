@@ -6,8 +6,8 @@
 //! layout survive the assistant's writes.
 
 use crate::account::{
-    AccountColor, AccountKey, AccountSettings, AuthMethod, CertificatePin, Endpoint, Identity,
-    OAuthProvider, Pop3Policy, Protocol, Receive, Security, is_loopback,
+    AccountColor, AccountKey, AccountSettings, AuthMethod, CertificatePin, Endpoint, HtmlSignature,
+    Identity, OAuthProvider, Pop3Policy, Protocol, Receive, Security, is_loopback,
 };
 use crate::config::{FileError, article, did_you_mean, entries, parse_toml};
 use std::net::Ipv6Addr;
@@ -20,7 +20,7 @@ pub const ACCOUNTS_FILE: &str = "accounts.toml";
 /// The longest key a hand-written account may have.
 pub const MAX_KEY_LENGTH: usize = 40;
 
-const ACCOUNT_SETTINGS: [&str; 12] = [
+const ACCOUNT_SETTINGS: [&str; 13] = [
     "key",
     "name",
     "label",
@@ -29,6 +29,7 @@ const ACCOUNT_SETTINGS: [&str; 12] = [
     "username",
     "auth",
     "signature",
+    "signature_html",
     "imap",
     "pop3",
     "smtp",
@@ -39,7 +40,7 @@ const ENDPOINT_SETTINGS: [&str; 4] = ["host", "port", "security", "certificate"]
 const POP3_SETTINGS: [&str; 2] = ["leave_on_server", "delete_after_days"];
 /// The most days `delete_after_days` takes: ten years.
 pub const MAX_DELETE_AFTER_DAYS: u32 = 3650;
-const IDENTITY_SETTINGS: [&str; 3] = ["name", "address", "signature"];
+const IDENTITY_SETTINGS: [&str; 4] = ["name", "address", "signature", "signature_html"];
 /// The longest signature, in characters.
 pub const MAX_SIGNATURE_CHARS: usize = 10_000;
 
@@ -233,6 +234,7 @@ struct ReadIdentity {
     address: String,
     address_span: Range<usize>,
     signature: Option<String>,
+    signature_html: Option<HtmlSignature>,
 }
 
 /// Collects the mistakes of one `accounts.toml` read.
@@ -337,11 +339,37 @@ impl Reader<'_> {
             .collect()
     }
 
+    /// An HTML signature's file (issue #6): a path, relative to Sealwax's config folder or
+    /// absolute, without control characters; the app reads it.
+    fn signature_html(&mut self, value: &Spanned<DeValue<'_>>) -> Option<HtmlSignature> {
+        let Some(text) = value.get_ref().as_str() else {
+            self.error(
+                value.span(),
+                format!(
+                    "signature_html takes the HTML file's path in quotes, like \
+                     \"signatures/work/signature.html\", not {}",
+                    article(value.get_ref().type_str())
+                ),
+            );
+            return None;
+        };
+        if text.trim().is_empty() || text.chars().any(char::is_control) {
+            self.error(
+                value.span(),
+                "signature_html is the HTML file's path, like \"signatures/work/signature.html\" \
+                 (in Sealwax's config folder); leave the line out for none",
+            );
+            return None;
+        }
+        Some(HtmlSignature::unread(text.trim()))
+    }
+
     fn identity(&mut self, table: &DeTable<'_>, header: Range<usize>) -> Option<ReadIdentity> {
         let errors_before = self.errors.len();
         let mut name = None;
         let mut address = None;
         let mut signature = None;
+        let mut signature_html = None;
         for (field, value) in entries(table) {
             let field_name = field.get_ref().as_ref();
             let span = value.span();
@@ -372,6 +400,7 @@ impl Reader<'_> {
                     }
                 }
                 "signature" => signature = self.signature(value),
+                "signature_html" => signature_html = self.signature_html(value),
                 _ if is_secret_name(field_name) => {
                     self.error(field.span(), secret_message(field_name));
                 }
@@ -405,6 +434,7 @@ impl Reader<'_> {
             address,
             address_span,
             signature,
+            signature_html,
         })
     }
 
@@ -421,6 +451,7 @@ impl Reader<'_> {
         let mut incoming_key: Option<&str> = None;
         let mut smtp = None;
         let mut signature = None;
+        let mut signature_html = None;
         let mut identities = Vec::new();
         for (field, value) in entries(table) {
             let field_name = field.get_ref().as_ref();
@@ -527,6 +558,7 @@ impl Reader<'_> {
                 }
                 "smtp" => smtp = self.server(Protocol::Smtp, value).map(|(server, _)| server),
                 "signature" => signature = self.signature(value),
+                "signature_html" => signature_html = self.signature_html(value),
                 "identity" => identities = self.identities(value),
                 _ if is_secret_name(field_name) => {
                     self.error(field.span(), secret_message(field_name));
@@ -590,6 +622,7 @@ impl Reader<'_> {
                 name: identity.name.unwrap_or_else(|| name.clone()),
                 address: identity.address,
                 signature: identity.signature,
+                signature_html: identity.signature_html,
             })
             .collect();
         Some(Located {
@@ -606,6 +639,7 @@ impl Reader<'_> {
                 smtp,
                 auth,
                 signature,
+                signature_html,
                 identities,
             },
             key_span,
@@ -1245,6 +1279,10 @@ pub fn default_accounts_file() -> String {
      # signature = \"\"\"\n\
      # Ada Lovelace\n\
      # Analytical Engines Ltd.\"\"\"       # optional: plain text under your mail, after \"-- \"\n\
+     # signature_html = \"signatures/work/signature.html\"  # optional: an HTML signature\n\
+     #                                # in place of it, in this folder; its images (PNG,\n\
+     #                                # JPEG, GIF, WebP) lie beside it and go with the mail.\n\
+     #                                # The plain signature stands in when it can't be read\n\
      #\n\
      # [account.imap]\n\
      # host = \"imap.example.test\"\n\
@@ -1271,7 +1309,8 @@ pub fn default_accounts_file() -> String {
      #                                # a reply goes out from the address it was sent to\n\
      # name = \"Ada at the board\"      # optional: the account's name by default\n\
      # address = \"board@example.test\"\n\
-     # signature = \"Ada, for the board\"  # optional\n"
+     # signature = \"Ada, for the board\"  # optional\n\
+     # signature_html = \"signatures/board/signature.html\"  # optional\n"
         .to_owned()
 }
 
@@ -1302,6 +1341,7 @@ mod tests {
             username: address.to_owned(),
             auth: AuthMethod::Password,
             signature: None,
+            signature_html: None,
             identities: Vec::new(),
         }
     }
@@ -1601,11 +1641,16 @@ mod tests {
             Some("Ada Lovelace\nAnalytical Engines Ltd.")
         );
         assert_eq!(
+            accounts[0].signature_html,
+            Some(HtmlSignature::unread("signatures/work/signature.html"))
+        );
+        assert_eq!(
             accounts[0].identities,
             [Identity {
                 name: "Ada at the board".to_owned(),
                 address: "board@example.test".to_owned(),
                 signature: Some("Ada, for the board".to_owned()),
+                signature_html: Some(HtmlSignature::unread("signatures/board/signature.html")),
             }]
         );
     }
@@ -1919,16 +1964,63 @@ mod tests {
                     name: "Ada Lovelace".to_owned(),
                     address: "alias@example.test".to_owned(),
                     signature: None,
+                    signature_html: None,
                 },
                 Identity {
                     name: "Board".to_owned(),
                     address: "board@example.test".to_owned(),
                     signature: Some("B".to_owned()),
+                    signature_html: None,
                 },
             ]
         );
         let blank = ONE.replace("name = ", "signature = \" \\n \"\nname = ");
         assert_eq!(parse(&blank).unwrap()[0].signature, None);
+    }
+
+    #[test]
+    fn reads_html_signatures() {
+        let text = ONE.replace(
+            "address = \"ada@example.test\"\n",
+            "address = \"ada@example.test\"\nsignature_html = \" signatures/work/sig.html \"\n",
+        ) + "\n[[account.identity]]\naddress = \"board@example.test\"\n\
+               signature_html = \"/home/ada/board.html\"\n";
+        let account = &parse(&text).unwrap()[0];
+        assert_eq!(
+            account.signature_html,
+            Some(HtmlSignature::unread("signatures/work/sig.html"))
+        );
+        assert_eq!(
+            account.identities[0].signature_html,
+            Some(HtmlSignature::unread("/home/ada/board.html"))
+        );
+        let senders = crate::compose::identity::senders(account);
+        assert_eq!(senders[0].signature_html, account.signature_html);
+        for (value, expected) in [
+            (
+                "3",
+                "line 3, column 18: signature_html takes the HTML file's path in quotes",
+            ),
+            (
+                "\" \"",
+                "line 3, column 18: signature_html is the HTML file's path",
+            ),
+            (
+                "\"a\\u0007b\"",
+                "line 3, column 18: signature_html is the HTML file's path",
+            ),
+        ] {
+            let bad = ONE.replace("name = ", &format!("signature_html = {value}\nname = "));
+            let found = errors(&bad);
+            assert!(
+                found
+                    .first()
+                    .is_some_and(|error| error.starts_with(expected)),
+                "{expected:?} not in {found:?}"
+            );
+        }
+        let typo = ONE.replace("name = ", "signature_htm = \"a.html\"\nname = ");
+        assert!(errors(&typo)[0].contains("did you mean signature_html?"));
     }
 
     #[test]
