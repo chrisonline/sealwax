@@ -4,6 +4,7 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 
 ## Not released yet
 
+- **Messages open at once with GNOME's text scaling:** with a text scaling factor other than 100 %, Sealwax waited three seconds before showing each message, and made its body taller than its text. It now measures messages in the right unit.
 - **Ctrl+W closes the composer:** a new command, **Close Composer**, saves the draft and closes the composer as its Close button does, from anywhere in it. `keys.toml` can give it another key (`close-composer`).
 
 ## 0.4.9 — 2026-10-19

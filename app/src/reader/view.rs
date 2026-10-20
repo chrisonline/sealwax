@@ -673,9 +673,13 @@ impl MessageView {
                     if number("load") != state.load.get() as f64 {
                         return;
                     }
-                    let number = |name: &str| number(name) as i32;
-                    let height = number("height").clamp(1, MAX_VIEW_HEIGHT);
-                    let width = number("width");
+                    // The page measures in its own CSS px, which are GTK's divided by the zoom
+                    // WebKit applies from GTK's font DPI, GNOME's text scaling factor (at 0.9091
+                    // a 1,162 px view is 1,278 px wide inside). Turned back into GTK's px, so the
+                    // reader compares and sizes in one unit.
+                    let (height, width) =
+                        to_widget_px(number("height"), number("width"), view.width(), font_zoom());
+                    let height = height.clamp(1, MAX_VIEW_HEIGHT);
                     state.height.set(height);
                     view.set_size_request(-1, height);
                     state.emit(ViewEvent::Height { height, width });
@@ -942,6 +946,32 @@ impl MessageView {
     }
 }
 
+/// A body's height and width as the page measured them (its CSS px) in GTK's px:
+/// `(height, width)`. The page's px are GTK's divided by the zoom WebKit applies. With the view's
+/// width in GTK's px the scale is exact; a view not laid out yet (width 0, as when the reader
+/// stages a new message) takes `zoom`, the zoom GTK's font DPI gives ([`font_zoom`]).
+fn to_widget_px(height: f64, width: f64, view_width: i32, zoom: f64) -> (i32, i32) {
+    if width < 1.0 {
+        return (height as i32, width as i32);
+    }
+    if view_width >= 1 {
+        let scale = f64::from(view_width) / width;
+        return ((height * scale).ceil() as i32, view_width);
+    }
+    ((height * zoom).ceil() as i32, (width * zoom).round() as i32)
+}
+
+/// The zoom WebKitGTK gives pages from GTK's font DPI (`gtk-xft-dpi`, 1024ths of a dot per
+/// inch), which GNOME's text scaling factor sets: 96 dpi is 1. 1 when GTK has none.
+fn font_zoom() -> f64 {
+    let dpi = gtk::Settings::default().map_or(-1, |settings| settings.gtk_xft_dpi());
+    if dpi > 0 {
+        f64::from(dpi) / 1024.0 / 96.0
+    } else {
+        1.0
+    }
+}
+
 /// Copying stays; everything that would open, download, reload or navigate goes. The
 /// inspector stays in debug builds.
 fn keep_in_context_menu(action: ContextMenuAction) -> bool {
@@ -1072,6 +1102,23 @@ pub fn disabled_features(view: &webkit6::WebView) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::reader::RETIRED_FEATURES;
+
+    #[test]
+    fn page_px_become_gtk_px() {
+        // No zoom: as measured.
+        assert_eq!(to_widget_px(773.0, 1162.0, 1162, 1.0), (773, 1162));
+        // GNOME's text scaling factor 0.9091: the page is 1,278 px wide in a 1,162 px view.
+        assert_eq!(to_widget_px(773.0, 1278.0, 1162, 0.9091), (703, 1162));
+        assert_eq!(to_widget_px(2048.0, 1278.0, 1162, 0.9091), (1863, 1162));
+        // A zoom above 1 makes the page narrower than the view.
+        assert_eq!(to_widget_px(500.0, 1000.0, 1250, 1.25), (625, 1250));
+        // A view not laid out yet takes the font DPI's zoom: the same width as the column.
+        assert_eq!(to_widget_px(773.0, 1278.0, 0, 0.9091), (703, 1162));
+        assert_eq!(to_widget_px(2048.0, 1278.0, 0, 0.9091), (1862, 1162));
+        assert_eq!(to_widget_px(773.0, 1162.0, 0, 1.0), (773, 1162));
+        // Without a page width, as measured.
+        assert_eq!(to_widget_px(773.0, 0.0, 1162, 0.9091), (773, 0));
+    }
 
     /// Isolated-world scripts aren't bound by the page's CSP, and a view whose images the user
     /// allowed loads without the content filter, so the reader's helpers load nothing at all
