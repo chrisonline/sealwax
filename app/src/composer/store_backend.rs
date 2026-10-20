@@ -17,7 +17,9 @@ use crate::mailbox;
 use gtk4::{gio, glib};
 use sealwax_domain::account::{AccountSettings, Identity};
 use sealwax_domain::compose::reply::{self, Original};
-use sealwax_domain::compose::{self, Draft, DraftPart, ReplyKind, identity, ids, mime, stored};
+use sealwax_domain::compose::{
+    self, Draft, DraftPart, ReplyKind, data_images, identity, ids, mime, stored,
+};
 use sealwax_domain::model::{Account, AccountId, Address, DraftId, MessageId};
 use sealwax_engine::api::{Command, Event};
 use sealwax_infrastructure::blobs::BlobStore;
@@ -26,6 +28,7 @@ use sealwax_infrastructure::store::{
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::time::Duration;
@@ -74,6 +77,7 @@ pub fn senders(account: &Account, settings: &[AccountSettings]) -> Vec<Identity>
             name: account.name.clone(),
             address: account.address.clone(),
             signature: None,
+            signature_html: None,
         }],
     }
 }
@@ -85,7 +89,7 @@ fn chips(account: AccountId, senders: &[Identity]) -> Vec<Sender> {
             account,
             label: identity.name.clone(),
             address: identity::from_address(identity),
-            signature: identity.signature.clone(),
+            signature: identity::signature_of(identity),
         })
         .collect()
 }
@@ -174,6 +178,78 @@ impl Context {
 
     fn senders(&self, account: &Account) -> Vec<Identity> {
         senders(account, &self.settings)
+    }
+
+    /// Reads the HTML signatures `accounts.toml` names (issue #6), off the GTK thread, each
+    /// time a message is started, so a changed file applies to the next one.
+    async fn read_signatures(&mut self, config_dir: PathBuf) {
+        if !self.settings.iter().any(|account| {
+            account.signature_html.is_some()
+                || account
+                    .identities
+                    .iter()
+                    .any(|identity| identity.signature_html.is_some())
+        }) {
+            return;
+        }
+        let mut settings = self.settings.clone();
+        if let Ok(read) = gio::spawn_blocking(move || {
+            sealwax_infrastructure::signatures::load_all(&config_dir, &mut settings);
+            settings
+        })
+        .await
+        {
+            self.settings = read;
+        }
+    }
+
+    /// Why an HTML signature of `account`'s senders can't be used, each once.
+    fn signature_notices(&self, account: &Account) -> Vec<String> {
+        let mut notices: Vec<String> = Vec::new();
+        for sender in self.senders(account) {
+            if let Some(Some(Err(why))) = sender.signature_html.map(|html| html.loaded)
+                && !notices.contains(&why)
+            {
+                notices.push(why);
+            }
+        }
+        notices
+    }
+
+    /// The draft's `data:` images (an HTML signature's) as parts in the blob store, shown by
+    /// `cid:` (issue #6), so a draft sent without the composer sends them as the composer does.
+    async fn inline_images(&self, draft: &mut Draft) {
+        if !draft.html.contains("src=\"data:image/") {
+            return;
+        }
+        let Ok(blobs) = self.blobs() else {
+            return;
+        };
+        let html = draft.html.clone();
+        let sender = draft.from.email.clone();
+        let stored = gio::spawn_blocking(move || {
+            let (html, images) = data_images::extract(&html, || ids::content_id(&sender, random()));
+            let parts = images
+                .into_iter()
+                .map(|image| {
+                    let blob = blobs.put(&image.data).ok()?;
+                    let extension = image.mime_type.trim_start_matches("image/");
+                    Some(DraftPart {
+                        name: format!("signature.{extension}"),
+                        mime_type: image.mime_type,
+                        size: image.data.len() as u64,
+                        blob,
+                        content_id: Some(image.content_id),
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some((html, parts))
+        })
+        .await;
+        if let Ok(Some((html, parts))) = stored {
+            draft.html = html;
+            draft.parts.extend(parts);
+        }
     }
 
     /// Who a draft of `account` can be sent as: every account that sends, in the sidebar's
@@ -401,9 +477,12 @@ fn title(kind: ReplyKind) -> &'static str {
     }
 }
 
-async fn prepare(context: Context, request: ComposeRequest) -> Result<Prepared, String> {
+async fn prepare(mut context: Context, request: ComposeRequest) -> Result<Prepared, String> {
     let state = context.state()?;
     state.mailbox().wait_ready().await;
+    context
+        .read_signatures(state.config().dirs.config.clone())
+        .await;
     let (account, draft, title, id) = match request {
         ComposeRequest::New { account } => {
             let account = context.account(account)?;
@@ -459,20 +538,26 @@ async fn prepare(context: Context, request: ComposeRequest) -> Result<Prepared, 
             }
         }
     };
+    let mut draft = draft;
     let id = match id {
         Some(id) => {
             let store = context.store()?;
             let _ = store.set_draft_open(id, true).recv().await;
             id
         }
-        None => context.create(draft.clone()).await?,
+        None => {
+            context.inline_images(&mut draft).await;
+            context.create(draft.clone()).await?
+        }
     };
     let senders = context.all_senders(&account)?;
+    let notices = context.signature_notices(&account);
     Ok(Prepared {
         id,
         draft,
         senders,
         title,
+        notices,
     })
 }
 

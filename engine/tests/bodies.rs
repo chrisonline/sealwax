@@ -256,6 +256,7 @@ fn bodies_are_fetched_once_answered_per_message_and_kept_under_the_cap() {
         username: "bodies@example.test".into(),
         auth: AuthMethod::Password,
         signature: None,
+        signature_html: None,
         identities: Vec::new(),
     };
     let commands = engine.commands();

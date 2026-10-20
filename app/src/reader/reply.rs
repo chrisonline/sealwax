@@ -86,6 +86,7 @@ pub fn everyone(headers: &Headers, mine: &[String]) -> Vec<Address> {
             name: String::new(),
             address: address.clone(),
             signature: None,
+            signature_html: None,
         })
         .collect();
     let (to, cc) = compose_reply::recipients(headers, ReplyKind::ReplyAll, &senders);

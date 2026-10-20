@@ -2,6 +2,10 @@
 
 Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to install, update and uninstall Sealwax.
 
+## Not released yet
+
+- **HTML signatures:** a signature can now be a designed HTML file, with your logo, colours, fonts and links, per account and per sender address ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)). Name it with `signature_html = "signatures/work/signature.html"` in `accounts.toml` and put its images beside it: they go inside the message, so recipients see the logo without loading anything from the web. If the file can't be used, the composer says why and your plain signature stands in.
+
 ## 0.5.1 — 2026-10-20
 
 - **Check for Updates:** a new item in the main menu, **Check for Updates…**, asks GitHub which Sealwax is the latest and says "You have the latest version", or shows the command that installs the new one, with a **Copy Command** button: paste it into a terminal and press Enter. Sealwax still never checks by itself, only when you choose it.

@@ -1222,6 +1222,7 @@ mod tests {
             username: "a".into(),
             auth,
             signature: None,
+            signature_html: None,
             identities: Vec::new(),
         }
     }

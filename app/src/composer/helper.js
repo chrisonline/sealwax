@@ -60,6 +60,81 @@
   const MAX_IMAGE = 10 * 1024 * 1024;
   const TOKEN = /^[a-z2-7]{26}$/;
 
+  // Inside the signature's div of the editor's own document (an HTML signature, issue #6) the
+  // cleaner also keeps these tags, `tel:` links, table layout attributes and the `style`
+  // declarations `signatureStyle` allows: the same rules as domain::compose::signature_html.
+  const SIGNATURE_TAGS = new Set(['SPAN', 'SMALL']);
+  const SIGNATURE_LINK = /^(https?:\/\/|mailto:|tel:)/i;
+  const SIGNATURE_LAYOUT = {
+    TABLE: ['width', 'border', 'cellpadding', 'cellspacing', 'align', 'bgcolor'],
+    TD: ['width', 'height', 'align', 'valign', 'bgcolor'],
+    TH: ['width', 'height', 'align', 'valign', 'bgcolor'],
+    TR: ['align', 'valign', 'bgcolor'],
+    P: ['align'],
+    DIV: ['align'],
+  };
+  const LAYOUT_VALUE = /^[#a-z0-9%.-]{1,32}$/i;
+  const SIGNATURE_PROPERTIES = new Set([
+    'color', 'background', 'background-color', 'font', 'font-family', 'font-size',
+    'font-weight', 'font-style', 'font-variant', 'text-decoration', 'text-align',
+    'text-transform', 'text-indent', 'vertical-align', 'line-height', 'letter-spacing',
+    'word-spacing', 'white-space', 'margin', 'margin-top', 'margin-right', 'margin-bottom',
+    'margin-left', 'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+    'border', 'border-top', 'border-right', 'border-bottom', 'border-left', 'border-color',
+    'border-width', 'border-style', 'border-collapse', 'border-spacing', 'border-radius',
+    'width', 'min-width', 'max-width', 'height', 'min-height', 'max-height', 'display',
+    'table-layout', 'list-style-type',
+  ]);
+  const SIGNATURE_DISPLAYS = new Set([
+    'inline', 'block', 'inline-block', 'table', 'table-row', 'table-cell', 'list-item',
+  ]);
+  const SIGNATURE_FUNCTIONS = new Set(['rgb', 'rgba', 'hsl', 'hsla']);
+
+  const cssValue = (property, raw) => {
+    let value = raw.trim();
+    const important = value.toLowerCase().indexOf('!important');
+    if (important >= 0) {
+      value = value.slice(0, important).trimEnd();
+    }
+    if (!value || value.length > 200 || !/^[a-z0-9 #%.,\-+'"()\/_]+$/i.test(value)) {
+      return null;
+    }
+    const lower = value.toLowerCase();
+    if (['url', 'expression', 'javascript', '/*', 'image', 'var('].some((bad) => lower.includes(bad))) {
+      return null;
+    }
+    const calls = lower.match(/[a-z0-9-]*\(/g) || [];
+    if (calls.some((call) => !SIGNATURE_FUNCTIONS.has(call.slice(0, -1)))) {
+      return null;
+    }
+    if (property === 'display' && !SIGNATURE_DISPLAYS.has(lower)) {
+      return null;
+    }
+    return value;
+  };
+
+  const signatureStyle = (value) => {
+    const kept = [];
+    for (const declaration of value.split(';')) {
+      const colon = declaration.indexOf(':');
+      if (colon < 0) {
+        continue;
+      }
+      const property = declaration.slice(0, colon).trim().toLowerCase();
+      if (!SIGNATURE_PROPERTIES.has(property)) {
+        continue;
+      }
+      const allowed = cssValue(property, declaration.slice(colon + 1));
+      if (allowed !== null) {
+        kept.push(`${property}: ${allowed}`);
+      }
+    }
+    return kept.length ? kept.join('; ') : null;
+  };
+
+  const isSignature = (element) => element.tagName.toUpperCase() === 'DIV'
+    && (element.getAttribute('class') || '').split(/\s+/).includes('sw-signature');
+
   const emptyStats = () => ({
     dropped: {}, handlers: 0, styles: 0, attributes: 0, remote: 0, images: 0, links: 0,
     comments: 0, unwrapped: 0, deep: 0,
@@ -110,14 +185,26 @@
   };
 
   // `own`: the editor's own document (serialising), whose cid: images are the draft's parts;
-  // a paste or a drop never brings cid: references in.
-  const copyElement = (source, tag, doc, stats, own) => {
+  // a paste or a drop never brings cid: references in. `signature`: inside the signature's div
+  // of the editor's own document, where an HTML signature keeps its styles.
+  const copyElement = (source, tag, doc, stats, own, signature) => {
     const copy = doc.createElement(tag === 'STRONG' ? 'B' : tag === 'EM' ? 'I' : tag);
     for (const attribute of Array.from(source.attributes)) {
       const name = attribute.name.toLowerCase();
       const value = attribute.value.trim();
       if (name.startsWith('on')) {
         stats.handlers += 1;
+      } else if (signature && name === 'style') {
+        const kept = signatureStyle(value);
+        if (kept) {
+          copy.setAttribute('style', kept);
+        } else {
+          stats.styles += 1;
+        }
+      } else if (signature && tag === 'A' && name === 'href' && SIGNATURE_LINK.test(value)) {
+        copy.setAttribute('href', value);
+      } else if (signature && (SIGNATURE_LAYOUT[tag] || []).includes(name) && LAYOUT_VALUE.test(value)) {
+        copy.setAttribute(name, value);
       } else if (tag === 'A' && name === 'href') {
         if (LINK.test(value)) {
           copy.setAttribute('href', value);
@@ -174,7 +261,7 @@
     return copy;
   };
 
-  const cleanInto = (source, target, doc, stats, depth, own) => {
+  const cleanInto = (source, target, doc, stats, depth, own, signature) => {
     if (depth > 64) {
       stats.deep += 1;
       return;
@@ -198,32 +285,34 @@
         continue;
       }
       let parent = target;
-      for (const wrapper of emphasis(node)) {
+      // A signature's styles stay as they are, so its emphasis isn't moved into tags.
+      for (const wrapper of signature ? [] : emphasis(node)) {
         if (wrapper !== SEMANTIC[tag]) {
           const element = doc.createElement(wrapper);
           parent.appendChild(element);
           parent = element;
         }
       }
-      if ((tag === 'B' || tag === 'STRONG') && normalWeight(node)) {
+      const inside = signature || (own && isSignature(node));
+      if (!signature && (tag === 'B' || tag === 'STRONG') && normalWeight(node)) {
         stats.unwrapped += 1;
         countAttributes(node, stats);
-        cleanInto(node, parent, doc, stats, depth + 1, own);
+        cleanInto(node, parent, doc, stats, depth + 1, own, inside);
       } else if (BLOCKS.has(tag)) {
         const block = doc.createElement('DIV');
         countAttributes(node, stats);
         parent.appendChild(block);
-        cleanInto(node, block, doc, stats, depth + 1, own);
-      } else if (!KEEP.has(tag)) {
+        cleanInto(node, block, doc, stats, depth + 1, own, inside);
+      } else if (!KEEP.has(tag) && !(signature && SIGNATURE_TAGS.has(tag))) {
         stats.unwrapped += 1;
         countAttributes(node, stats);
-        cleanInto(node, parent, doc, stats, depth + 1, own);
+        cleanInto(node, parent, doc, stats, depth + 1, own, inside);
       } else {
-        const copy = copyElement(node, tag, doc, stats, own);
+        const copy = copyElement(node, tag, doc, stats, own, signature);
         if (copy) {
           parent.appendChild(copy);
           if (!VOID.has(tag)) {
-            cleanInto(node, copy, doc, stats, depth + 1, own);
+            cleanInto(node, copy, doc, stats, depth + 1, own, inside);
           }
         }
       }
@@ -237,7 +326,7 @@
       stats.dropped[element.tagName] = (stats.dropped[element.tagName] || 0) + 1;
     }
     const out = doc.createElement('div');
-    cleanInto(doc.body, out, doc, stats, 0, !!own);
+    cleanInto(doc.body, out, doc, stats, 0, !!own, false);
     return { html: out.innerHTML, stats };
   };
 
@@ -541,6 +630,8 @@
       if (current) {
         if (cleaned) {
           current.outerHTML = cleaned;
+          // An HTML signature's images become parts of the draft, as pasted ones do.
+          offerImages();
         } else {
           current.remove();
         }
@@ -560,6 +651,7 @@
           document.body.appendChild(node);
         }
       }
+      offerImages();
       return true;
     },
     insertImage: (cid, name) => document.execCommand('insertHTML', false,

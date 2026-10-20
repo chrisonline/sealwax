@@ -343,6 +343,7 @@ mod tests {
             username: address.to_owned(),
             auth: AuthMethod::Password,
             signature: None,
+            signature_html: None,
             identities: Vec::new(),
         }
     }

@@ -148,6 +148,7 @@ pub fn settings(
         username,
         auth: AuthMethod::Password,
         signature: None,
+        signature_html: None,
         identities: Vec::new(),
     }
 }
