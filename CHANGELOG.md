@@ -4,6 +4,7 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 
 ## Not released yet
 
+- **Proton Mail syncs every folder again:** Proton Mail Bridge describes some messages in a way the mail standard doesn't allow, and Sealwax broke off the connection each time it met one, so the folders listed after it (Archive, Trash and others) never finished downloading. Sealwax now reads it.
 - **Ctrl+W closes the composer:** a new command, **Close Composer**, saves the draft and closes the composer as its Close button does, from anywhere in it. `keys.toml` can give it another key (`close-composer`).
 
 ## 0.4.9 — 2026-10-19
