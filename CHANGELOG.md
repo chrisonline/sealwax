@@ -7,7 +7,22 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **Proton Mail labels show on your mail:** a message you labelled in Proton now shows its labels as small chips after its subject in the message list, and under the sender in the reader. Sealwax keeps the label folders that Proton Mail Bridge lists under **Labels** up to date by itself, so the labels show without opening those folders first. Labels are shown, not changed: label and unlabel mail in Proton's own apps, and Sealwax follows. Bridge doesn't pass on Proton's label colours, so give each label a colour of your own under `[labels]` in `config.toml` (`Work = "teal"`), from the eight account colours; labels without one are grey.
 - **Proton Mail syncs every folder again:** Proton Mail Bridge describes some messages in a way the mail standard doesn't allow, and Sealwax broke off the connection each time it met one, so the folders listed after it (Archive, Trash and others) never finished downloading. Sealwax now reads it.
 - **Messages open at once with GNOME's text scaling:** with a text scaling factor other than 100 %, Sealwax waited three seconds before showing each message, and made its body taller than its text. It now measures messages in the right unit.
+
+## 0.5.1 — 2026-10-20
+
+- **Check for Updates:** a new item in the main menu, **Check for Updates…**, asks GitHub which Sealwax is the latest and says "You have the latest version", or shows the command that installs the new one, with a **Copy Command** button: paste it into a terminal and press Enter. Sealwax still never checks by itself, only when you choose it.
+
+## 0.5.0 — 2026-10-20
+
+- **Unread mail in folded subfolders shows:** a folder whose subfolders are folded away now counts their unread mail with its own, as Thunderbird does, so you can see there is new mail inside. Open the folder again and each one shows its own count.
+- **Read and move around from the keyboard:** `d` and Shift+D scroll the open message half a screen down and up from the message list, so you can read on without leaving the list ([issue #10](https://github.com/PixDevsApps/sealwax/issues/10)); `l` opens the message, as Enter and `o` do. `g` then `a` goes to All Inboxes, and `g` then `1` to `9` to that account's Inbox, in the sidebar's order ([issue #12](https://github.com/PixDevsApps/sealwax/issues/12)). `keys.toml` can change them (`scroll-message-down`, `scroll-message-up`, `go-to-all-inboxes`, `go-to-account-1` …).
 - **Ctrl+W closes the composer:** a new command, **Close Composer**, saves the draft and closes the composer as its Close button does, from anywhere in it. `keys.toml` can give it another key (`close-composer`).
+- **Moving between messages keeps up on a slow computer:** when you move with `j`/`k`, a click or Previous/Next, the message you left goes from the reader within 150 ms, as a deleted one already did; the next one shows as far as it is ready and fills in. Before, the old message could stay for up to 3 seconds while the next one was prepared.
+- **The first message after starting opens sooner:** Sealwax now starts the part that shows messages as soon as its window is up, instead of when you open your first message, so the first one no longer waits for it.
+- **Large messages show at once:** a message too large to download whole no longer waits for its pictures from the server before it shows. Its text is there at once and the pictures appear as they arrive.
+- **Spell checking needs `hunspell`:** the package now suggests `hunspell` itself as well as a dictionary such as `hunspell-en_us`; a dictionary alone gave no spell checking. If spelling mistakes aren't underlined in the composer, install both: `sudo pacman -S hunspell hunspell-en_us`.
+- **A quieter log:** Sealwax no longer sets a WebKit setting that does nothing and logged a warning each time a message was shown.
+- **A word when Microsoft sign-in seems stuck:** many work and school organizations must approve Sealwax before their people can sign in, and Microsoft then shows "Need admin approval" and never sends the browser back. After a minute of waiting, the setup assistant now says so and points to the user guide, which explains what to ask your IT admin. Personal Outlook.com accounts aren't affected.
 
 ## 0.4.9 — 2026-10-19
 

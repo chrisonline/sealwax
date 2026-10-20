@@ -6,7 +6,7 @@
 //! | --- | --- |
 //! | `engine-attach`, `engine-detach` | Connects the fake engine, or leaves the app without one; links the assistant opens are recorded from then on, never opened |
 //! | `engine-start CA` | Starts the real engine instead, trusting only the CA file (the mail testbed's) and keeping secrets in memory |
-//! | `engine-expect detect\|verify\|read-certificate\|add-account\|edit-account\|sign-in\|cancel-sign-in\|update-password\|reconnect [KEY=VALUE…]` | Waits for the app's next command and checks its fields: `address`, `name`, `label` and `color` (`none` for none), `key`, `imap` (or `incoming`, the same: IMAP's or POP3's server) and `smtp` (`host:port:tls\|starttls`, then `:pinned:` and the pinned certificate's first four bytes in hex when it has one; `read-certificate`'s is `server`, with `protocol` `imap`, `pop3` or `smtp`), `receive` (`imap`, `pop3:leave`, `pop3:leave:N`, `pop3:delete`; M8), `username`, `auth` (`password`, `microsoft`), `second` (`none`), `account` (a key, `none`), `provider`, `sign-in` (`last`: the last `SignIn`'s request; `none`), `password` (compared, never printed) |
+//! | `engine-expect detect\|verify\|read-certificate\|add-account\|edit-account\|sign-in\|cancel-sign-in\|update-password\|reconnect\|check-for-updates [KEY=VALUE…]` | Waits for the app's next command and checks its fields: `address`, `name`, `label` and `color` (`none` for none), `key`, `imap` (or `incoming`, the same: IMAP's or POP3's server) and `smtp` (`host:port:tls\|starttls`, then `:pinned:` and the pinned certificate's first four bytes in hex when it has one; `read-certificate`'s is `server`, with `protocol` `imap`, `pop3` or `smtp`), `receive` (`imap`, `pop3:leave`, `pop3:leave:N`, `pop3:delete`; M8), `username`, `auth` (`password`, `microsoft`), `second` (`none`), `account` (a key, `none`), `provider`, `sign-in` (`last`: the last `SignIn`'s request; `none`), `password` (compared, never printed) |
 //! | `engine-expect none [but KIND,…]` | The app sent nothing more, or only commands of those kinds (`load-older,folder-opened`: what the list sends by itself) |
 //! | `engine-reply progress SOURCE` | `DetectProgress` for the last command: `preset`, `autoconfig`, `ispdb`, `mx`, `srv`, `probe` |
 //! | `engine-reply detected FIXTURE` | `Detected`: `fjordpost`, `fastmail`, `icloud`, `imap-off`, `gmail`, `confirm`, `other-username`, `microsoft`, `bridge` (Proton Mail Bridge on 127.0.0.1), `no-imap`, `no-mail`, `not-found` |
@@ -28,23 +28,26 @@
 //! | `engine-reply part-fetched ok\|offline\|needs-sign-in\|gone\|store\|other` | `PartFetched` for the last `fetch-part` taken (its fields: `message`, `part`); `ok` carries the part of the message `files.rs` stored (ML-061) |
 //! | `engine-reply original-fetched ok\|offline\|needs-sign-in\|gone\|store\|other` | `OriginalFetched` for the last `fetch-original` taken (its field: `message`); `ok` carries the message `files.rs` stored, whole (ML-063) |
 //! | `engine-reply folder-changed ok\|offline\|taken\|not-allowed\|missing\|lost\|store`, `engine-reply folder-changed refused TEXT` | `FolderChanged` for the last `create-folder`, `rename-folder` or `delete-folder` taken (their fields: `account`, `parent` (`none`), `folder`, `name`); `ok` first makes the change in the app's store as the engine would (`folders.rs`); `refused` carries TEXT as the server's words (M9) |
+//! | `engine-reply update-checked VERSION\|running\|offline\|timeout\|certificate\|busy\|no-release\|unreadable` | `UpdateChecked` for the last `check-for-updates` taken: that release (`running`: this build's version) or the failure |
 //! | `engine-reply-stale …` | The same events with a request id the app never used |
 //! | `setup-type NAME TEXT`, `setup-choose NAME ITEM`, `setup-click NAME` | Types into a field, picks a choice's item by its text (a security's `tls`, `starttls`; Incoming mail's `imap`, `pop3`), clicks a visible, sensitive button |
 //! | `setup-key enter\|escape` | Enter in the focused field, Escape in the dialog |
 //! | `setup-respond NAME RESPONSE` | Answers the alert dialog named NAME (Remove Account's `remove-account`) as its button would |
 //! | `setup-dismiss-toasts` | Closes the toasts shown and queued, as their × would (for previews) |
+//! | `setup-still-waiting-after MS` | Shortens the minute a Microsoft sign-in waits before the note on admin approval shows, for the sign-ins started from then on |
 //! | `assert-setup open\|step\|sources\|focus VALUE` | The assistant's state |
 //! | `assert-setup client-id set\|none` | Whether a Microsoft client ID is in use (`config.toml`; self-tests have no built-in one) |
 //! | `assert-setup sign-in-needed KEY,…\|none` | The accounts the window's banner asks to sign in again, in order |
 //! | `assert-setup banner-queue ENTRY,…\|none` | Everything the banner has, in order: `keyring`, `certificate:KEY`, `sign-in:KEY`, `password:KEY`, `quota:KEY`, `rules:KEY`, `offline`, `unreachable` |
 //! | `assert-opened last URL\|none`, `assert-opened count N` | The last link handed to the browser opener, and how many were |
 //! | `assert-toast TEXT` | The toast on screen says TEXT (`setup-dismiss-toasts` clears earlier ones) |
+//! | `assert-clipboard TEXT` | The text Sealwax last put on the clipboard is TEXT |
 //! | `assert-text-contains NAME TEXT` | A label's, a button's or an alert dialog's text (its heading and body) contains TEXT |
 //! | `assert-field NAME TEXT` | A text field's text or a choice's item (never the password's) |
 //! | `assert-account-status ADDRESS synced\|syncing\|offline\|needs-sign-in\|certificate\|quota` | The sidebar's state of the account with ADDRESS |
 //! | `assert-account-folders ADDRESS TITLE,…` | The folders the sidebar shows for the account with ADDRESS, role folders first, by the titles it shows (M8) |
 
-use super::{Harness, StepResult, WAIT_TIMEOUT, equal, with_timeout};
+use super::{Harness, StepResult, WAIT_TIMEOUT, equal, number, with_timeout};
 use crate::desktop::DesktopEvent;
 use crate::engine::EngineOptions;
 use crate::preferences::SettingsFile;
@@ -63,9 +66,10 @@ use sealwax_domain::account::{
 };
 use sealwax_domain::folders::NameProblem;
 use sealwax_domain::model::{AccountId, FolderId, FolderRole, MessageId};
+use sealwax_domain::updates::Version;
 use sealwax_engine::api::{
     AccountError, BodyError, Command, Event, FetchedPart, FolderChange, FolderError, Original,
-    Password, Refused, RequestId, SyncStatus,
+    Password, Refused, RequestId, SyncStatus, UpdateError,
 };
 use sealwax_engine::imap::ServerText;
 use sealwax_engine::net::Trust;
@@ -89,6 +93,7 @@ pub const COMMANDS: &[(&str, usize, usize)] = &[
     ("setup-key", 1, 1),
     ("setup-respond", 2, 2),
     ("setup-dismiss-toasts", 0, 0),
+    ("setup-still-waiting-after", 1, 1),
     ("assert-setup", 2, 2),
     ("assert-text-contains", 2, 2),
     ("assert-field", 2, 2),
@@ -96,6 +101,7 @@ pub const COMMANDS: &[(&str, usize, usize)] = &[
     ("assert-account-folders", 2, 2),
     ("assert-opened", 2, 2),
     ("assert-toast", 1, 1),
+    ("assert-clipboard", 1, 1),
     ("desktop-network", 1, 1),
     ("desktop-resume", 0, 0),
 ];
@@ -116,6 +122,7 @@ pub fn checks(assertion: &str) -> bool {
             | "assert-account-folders"
             | "assert-opened"
             | "assert-toast"
+            | "assert-clipboard"
     )
 }
 
@@ -251,6 +258,10 @@ pub async fn step(harness: &Harness, command: &str, args: &[String]) -> StepResu
         }
         "engine-reply" => reply(harness, args, false).await,
         "engine-reply-stale" => reply(harness, args, true).await,
+        "setup-still-waiting-after" => {
+            setup::set_still_waiting_after(Duration::from_millis(number(&args[0])? as u64));
+            Ok(())
+        }
         "setup-type" => {
             let field = harness.widget(&args[0])?;
             let editable = field
@@ -472,6 +483,16 @@ pub fn check(harness: &Harness, assertion: &str, args: &[String]) -> StepResult 
                 ),
                 other => Err(format!("assert-opened checks last or count, not {other}")),
             }
+        }
+        "assert-clipboard" => {
+            let display = gtk::gdk::Display::default().ok_or("no display")?;
+            let text = display
+                .clipboard()
+                .content()
+                .and_then(|content| content.value(glib::Type::STRING).ok())
+                .and_then(|value| value.get::<String>().ok())
+                .ok_or("Sealwax put no text on the clipboard")?;
+            equal("clipboard", text.as_str(), args[0].as_str())
         }
         "assert-text-contains" => {
             let found = harness.widget(&args[0])?;
@@ -827,6 +848,7 @@ fn fields(
             };
             (kind, Some(*request), fields)
         }
+        Command::CheckForUpdates { request } => ("check-for-updates", Some(*request), Vec::new()),
         Command::Shutdown => ("shutdown", None, Vec::new()),
     }
 }
@@ -1112,9 +1134,32 @@ async fn reply(harness: &Harness, args: &[String], stale: bool) -> StepResult {
                 failure: login_failure(failure)?,
             }),
         },
+        ("update-checked", [answer]) => Event::UpdateChecked {
+            request,
+            result: update_result(answer)?,
+        },
         _ => return Err(format!("no reply {}", args.join(" "))),
     };
     send_event(harness, &fake, event).await
+}
+
+/// `update-checked`'s answer: a version, `running` (this build's), or a failure.
+fn update_result(answer: &str) -> Result<Result<Version, UpdateError>, String> {
+    Ok(match answer {
+        "running" => Ok(crate::updates::running()),
+        "offline" => Err(UpdateError::Offline),
+        "timeout" => Err(UpdateError::Timeout),
+        "certificate" => Err(UpdateError::Certificate),
+        "busy" => Err(UpdateError::Busy),
+        "no-release" => Err(UpdateError::NoRelease),
+        "unreadable" => Err(UpdateError::Unreadable),
+        version => Ok(Version::parse(version).ok_or_else(|| {
+            format!(
+                "use a version, running, offline, timeout, certificate, busy, no-release or \
+                 unreadable, not {version}"
+            )
+        })?),
+    })
 }
 
 /// Hands `event` to the app as the fake engine (`engine-attach` first), for other modules'

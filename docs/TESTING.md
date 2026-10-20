@@ -38,7 +38,7 @@ Evidence rules: record only what was actually run, with date, command, machine a
 - WebKit's sandbox (M9): `tools/ci.sh` runs the smoke run and every self-test with `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS` set, and `assert-web-sandbox` (in `reader` and the composer's scripts) checks the variable is gone and every WebKit web process Sealwax started runs under bubblewrap in a PID namespace of its own. `engine/tests/actor_panic.rs` restarts IMAP and POP3 actors after a panic (imap-proto's real one from the fake server, and injected ones); `domain/tests/html_cap.rs` (ignored; release builds) times nested HTML at the 256 KiB cap.
 - Accessibility (M9, ML-092) is checked by `a11y-window`, `a11y-reader`, `a11y-composer`, `a11y-setup` and `a11y-dialogs` (`app/src/selftest/a11y.rs`): `assert-accessible` walks the controls on screen and fails on one without a name, a meaningful role or the states its role needs (a tooltip isn't a name); `tab-chain window|composer forward|backward` presses real Tab or Shift+Tab until the focus comes back and fails on a trap, and `assert-tab-chain`, `assert-tab-stops` and `assert-focus-stop` check the chain; `assert-accessible-name`, `-role` and `-state`, the link checks (`link-hooks`, `assert-link-strip`, `assert-web-focus` …) and `assert-announced` check one thing each. What Orca says is the user's check.
 - The rules in the app (M9, ADR-020) run the app's own Rules dialog, editor, message menu and banner against the fake engine (`app/src/selftest/rules.rs`, `rules-dialog`, `rules-menu` and `rules-events`): the dialog's fields and choices take `setup-type`, `setup-choose` and `setup-click` (they work on any named widget of the window), and real clicks `click`; the file is the run's `$TMP/config/sealwax/rules/<key>.sieve`, written with `write-file` and checked with `assert-file-contains` and `assert-file-lacks` (behind `wait-until`, as the dialog writes off the GTK thread; `rules-wait` waits for its saves). `rules-opener` records what Open File would open (`assert-rules-opened NAME`); `rules-failed KEY LINE COLUMN TEXT` (or `KEY file`) and `rules-applied N|store|file [FOLDER]` are the engine's `RulesFailed` and `RulesApplied` (for the oldest Apply Rules request; with FOLDER the list's first N rows move there through the store's rules queue, as the engine queues a run, and the event carries the batch, so Undo is real); the fake engine records an `ApplyRules`' `rule` as the name of the one rule it runs (`none` for the account's rules); `row-menu POS` right-clicks a list row (opened as the gesture does when Broadway's click doesn't reach it headless), `row-menu-click NAME` clicks a menu item, and `assert-row-menu`, `assert-row-menu-items`, `assert-rules-dialog`, `assert-rules-set`, `assert-rules-senders`, `assert-rule-row`, `assert-rules-problem` and `assert-rules-banner` check them. `mail-add` takes `list=ID` for a List-Id header, and `to=HEADER` and `cc=HEADER` (2026-10-12, issue #8) for a To and a Cc as written. The engine side is B1's.
-- Folder management (M9, ADR-020) runs the app's own sidebar and dialogs against the fake engine (`app/src/selftest/folders.rs`, `folders-tree` and `folders-dialogs`): `folder-add ACCOUNT NAME [noselect] [noinferiors]` stores a folder with `/` between its levels; a folder is named `ACCOUNT:NAME` (`Work:Kunder/Acme`) wherever `ACCOUNT:ROLE` was taken; `folder-arrow` clicks a folder's fold arrow and `focus-folder` focuses its row; `assert-sidebar-tree ACCOUNT ROWS` (`Inbox,>Kvitteringer,Drafts`), `assert-folder-level`, `assert-folder-expanded`, `assert-folder-stored` and `assert-response DIALOG RESPONSE enabled|disabled|default` check the tree and the dialogs; `sidebar-menu-click [NAME]` and `assert-sidebar-menu STATE [NAME]` name a menu item. The fake engine takes `create-folder`, `rename-folder` and `delete-folder` (`account`, `parent`, `folder`, `name`) and answers `engine-reply folder-changed ok|offline|taken|not-allowed|missing|lost|store` or `refused TEXT`, `ok` first changing the app's store as the engine would; `engine-expect none but load-older,folder-opened` lets the list's own commands through. The engine side is `engine/tests/folders.rs` against the fake IMAP server, which takes CREATE, RENAME (with the folders under it), DELETE (refused for a folder with folders under it, as Dovecot does), SUBSCRIBE and UNSUBSCRIBE with a set of subscriptions, LIST patterns and a delimiter of choice; and `engine/tests/folders_testbed.rs` on the testbed.
+- Folder management (M9, ADR-020) runs the app's own sidebar and dialogs against the fake engine (`app/src/selftest/folders.rs`, `folders-tree` and `folders-dialogs`): `folder-add ACCOUNT NAME [noselect] [noinferiors]` stores a folder with `/` between its levels; a folder is named `ACCOUNT:NAME` (`Work:Kunder/Acme`) wherever `ACCOUNT:ROLE` was taken; `folder-arrow` clicks a folder's fold arrow and `focus-folder` focuses its row; `assert-sidebar-tree ACCOUNT ROWS` (`Inbox,>Kvitteringer,Drafts`), `assert-folder-level`, `assert-folder-expanded`, `assert-folder-count SPEC N [NAME]` (the count the row shows, 0 for none, and its accessible name), `assert-folder-stored` and `assert-response DIALOG RESPONSE enabled|disabled|default` check the tree and the dialogs; `sidebar-menu-click [NAME]` and `assert-sidebar-menu STATE [NAME]` name a menu item. The fake engine takes `create-folder`, `rename-folder` and `delete-folder` (`account`, `parent`, `folder`, `name`) and answers `engine-reply folder-changed ok|offline|taken|not-allowed|missing|lost|store` or `refused TEXT`, `ok` first changing the app's store as the engine would; `engine-expect none but load-older,folder-opened` lets the list's own commands through. The engine side is `engine/tests/folders.rs` against the fake IMAP server, which takes CREATE, RENAME (with the folders under it), DELETE (refused for a folder with folders under it, as Dovecot does), SUBSCRIBE and UNSUBSCRIBE with a set of subscriptions, LIST patterns and a delimiter of choice; and `engine/tests/folders_testbed.rs` on the testbed.
 - Background mode (M7, ML-084) is checked by `background-*`: closing the window keeps the process and its engine, activation builds a new window, `assert-freed` checks a closed window, its list and its reader are gone, `background-memory` prints PSS over close/reopen cycles, and Start Sealwax at Login writes only in the run's scratch `XDG_CONFIG_HOME` (`app/src/selftest/background.rs`).
 - `app/examples/theme_switch.rs` swaps a scratch Omarchy theme (`SEALWAX_OMARCHY_STATE`) as `omarchy-theme-set` does and checks colours, sizes and fonts after each switch; `app/examples/palette.rs` checks the actions, palette, scoped shortcuts, menu, shortcuts dialog and live settings.
 - WebKitGTK renders under `tools/headless.sh` in software (GTK has no GL there, so WebKit turns acceleration off). Security checks, heights, `cid:` loads and snapshots work headless. Without a Broadway client attached GTK paints about once per second, so frame timing, open-to-paint latency and scrolling are measured on the live session; headless WebView tests wait for events and allocations, never fixed delays (S2).
@@ -74,6 +74,60 @@ Each milestone's exit criteria are the acceptance list. Results go here as dated
 
 ## Results
 
+### 0.5.1 — 2026-10-20
+
+The release of Check for Updates. This machine.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI on the release commit `07684fe`, `SEALWAX_CI_DISPLAY=80 bash tools/ci.sh --ui` | exit 0; 1,531 passed, 0 failed, 99 ignored; 82 scripts, 8,047 of 8,047 steps; the hostile suite clean (60 cases, `dns=production=0 control=11`, `glib_criticals=0`, 272 s) | Pass |
+| `tools/release.py build` on `v0.5.1` | makepkg's `check()`: 1,096 passed, 0 failed; the binary says `sealwax 0.5.1` and holds no home-folder path | Pass |
+| The push range (`c223379..07684fe`) scanned before pushing | No personal address, home path or client ID; no working doc | Pass |
+| The release [v0.5.1](https://github.com/PixDevsApps/sealwax/releases/tag/v0.5.1) | Not a draft or pre-release; its four files; `releases/latest/download/…` and `releases/download/v0.5.1/…` both give the build's package (SHA-256 `7acd6a0e…5ac8`); Check for Updates' own request (`updates::tests::github`) reads 0.5.1 | Pass |
+| Installed here | Not yet: the owner's, with INSTALL.md's command | Not verified |
+
+### Check for Updates — 2026-10-20
+
+[ADR-021 amendment](DECISIONS.md#adr-021-amendment--check-for-updates-only-when-the-user-asks-2026-10-20). This machine, debug, headless (Broadway) unless said.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `sealwax_domain::updates`: only `vX.Y.Z` with plain numbers reads (a suffix, a sign, spaces, shell text, other digits, a number of 10 digits don't); the running version against the latest; the command for a release | Unit tests pass | Pass |
+| `sealwax_engine::updates` against a server on 127.0.0.1: the tag read from a release's answer; the request is `GET /repos/PixDevsApps/sealwax/releases/latest` with `User-Agent: Sealwax`, GitHub's Accept, no cookie, Referer or Authorization; an answer without a version, with shell text in the tag, or over 512 KiB is unreadable; 404 no release, 403 and 429 busy, 500 unreadable; nothing listening is offline; plain HTTP to another host is refused | Unit tests pass | Pass |
+| The real answer: `cargo test -p sealwax-engine updates::tests::github -- --ignored` (one request to api.github.com, nothing personal in it) | "the latest release is 0.5.0", GitHub's latest | Pass |
+| The registry and the menu: `check-for-updates` in a section of its own between the settings and Quit; the USER_GUIDE table | `cargo test -p sealwax-domain`: 496 passed; the menu's unit test | Pass |
+| `updates` self-test: nothing asked at startup; the dialog checks, then says the latest (this build), newer than the latest, a newer release with its command (selectable, Tab reaches it and Copy Command, the clipboard holds the command, "Copied"), offline, busy; a Cancel before the answer leaves it unused; no engine says it couldn't check; `assert-accessible dialog` | 62 of 62 steps (`tools/headless.sh 57`) | Pass |
+| CI, `SEALWAX_CI_DISPLAY=80 bash tools/ci.sh --ui` | exit 0; 1,531 passed, 0 failed, 99 ignored; 82 scripts, 8,047 of 8,047 steps; the hostile suite clean (60 cases, `dns=production=0 control=11`, `glib_criticals=0`, 272 s). Log: `.local/ci-ui-update-check-2026-10-20.log` | Pass |
+| In an installed build, on a live desktop, against GitHub | Not tried: it reaches users with the next release | Not verified |
+
+### The keys for issues #10 and #12 — 2026-10-20
+
+[ADR-017 amendment](DECISIONS.md#adr-017-amendment--the-keys-for-issues-10-and-12-accepted-and-built-2026-10-19). This machine, debug, headless (Broadway).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| The registry: `l` on Open Message, `d`/Shift+D, `g a`, `g 1`–`g 9`; the go-to sequences resolve in the list and the reader; the USER_GUIDE table matches | `cargo test -p sealwax-domain`: 492 passed | Pass |
+| `go_to::account_inbox`: the Inbox of the Nth account in the sidebar's order; none for a missing place, an account without an Inbox, or an Inbox that can't be selected | Unit test passes | Pass |
+| `triage-keys`: `l` opens the message, `g a` shows All Inboxes, `g 1` the first account's Inbox, `g 9` (no ninth account) leaves the folder | 264 of 264 steps | Pass |
+| `reader-conversation`: from the list, Shift+D twelve times reaches the top of a conversation 3,559 px down, `d` leaves it, Shift+D comes back | 127 of 127 steps | Pass |
+| CI, `SEALWAX_CI_DISPLAY=80 bash tools/ci.sh --ui` | exit 0; 1,518 passed, 0 failed, 98 ignored; 81 scripts, 7,985 of 7,985 steps; the hostile suite clean (60 cases, `dns=production=0 control=11`, `glib_criticals=0`, 273 s) | Pass |
+| On the owner's keyboard (US and Norwegian layouts) | Not tried; the keymap audit checks the layouts | Not verified |
+
+### The reader doesn't wait, a folded folder's unread, the Microsoft sign-in note — 2026-10-19
+
+The owner's decisions of 2026-10-19 ([ADR-011](DECISIONS.md#adr-011-amendment--moving-on-and-large-messages-dont-wait-2026-10-19), [ADR-009](DECISIONS.md#adr-009-amendment--a-folded-folder-counts-its-subfolders-unread-2026-10-19) and [ADR-008](DECISIONS.md#adr-008-amendment--work-and-school-accounts-explained-now-the-publisher-verified-later-2026-10-19) amendments). This machine, debug, headless under `tools/headless.sh` (Broadway), unless said otherwise.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `reader-leave` (rewritten): `hold-reader-layout true` keeps the next layout from finishing, then `j` and a delete | 20 of 20 steps, three runs: the left message gone 158–176 ms after `j` and 182–187 ms after the delete. With the selection's change still going through `Reader::show` (the old behaviour), both steps fail at 3,022.8 and 3,038.9 ms | Pass |
+| `reader-conversation`, a page shown before it is laid out | Failed at step 81 (the selected message 1,859 px down a scrolled column) until a settling page anchors its selected message; then 118 of 118 | Pass |
+| `files`: a large message whose inline image waits for `FetchPart` shows within 1.5 s (`wait-within 1500`), before the image is answered | 307 of 307 | Pass |
+| The first message after a start (a side agent, release, Sealwax's Broadway client attached, the fictional 2,400-message mailbox) | 107–119 ms (10 runs) with the web process started at the first selection; 27–31 ms (8 runs) with it started at startup; the first frame 300–309 ms either way. In the app, the reader's view came up 35 ms after the first frame with nothing selected | Pass; the owner's ~2 s live not reproduced |
+| `folders-tree`, a folded folder's sum (`assert-folder-count`), and `a11y-window` (side agent) | 141 of 141 and 178 of 178 | Pass |
+| The note after 60 s of waiting for Microsoft (side agent; the wait shortened to 300 ms by `setup-still-waiting-after`) | `setup-microsoft` 225/225, `setup-microsoft-banner` 179/179, `a11y-setup` 144/144 (the announcement), `a11y-dialogs` 168/168 | Pass; not on a work tenant |
+| CI, `SEALWAX_CI_DISPLAY=80 bash tools/ci.sh --ui` on `120e1f2` | exit 0; 1,517 passed, 0 failed, 98 ignored; 81 scripts, 7,962 of 7,962 steps; the hostile suite clean (60 cases, `dns=production=0 control=11`, `glib_criticals=0`, 273 s) | Pass |
+| On the owner's machine | Not measured | Not verified |
+
 ### GTK 4.24's Broadway daemon, patched for the headless checks — 2026-10-19
 
 GTK went from 4.22.4 to 4.24.1 on this machine on 2026-10-18, and `gtk4-broadwayd` then aborted in about 30 of the 81 CI scripts. This machine, debug build, on `aa56a8f` with the change in the working tree; headless displays 73 and 74.
@@ -104,6 +158,18 @@ WebKitGTK went from 2.52.6 to 2.54.1 on 2026-10-18 (GTK from 4.22.4 to 4.24.1), 
 | `cargo fmt --all --check`, Clippy with `-D warnings` | Clean | Pass |
 | `cargo test --workspace -- --skip bodies_download_beside_the_actor_and_the_prefetch_follows_new_mail` | 1,508 passed, 0 failed, 98 ignored. The skipped `engine/tests/actor.rs` test fails on `main` too | Pass |
 | `tools/ci.sh --ui`'s self-tests, run on past failures | 51 passed; 30 stopped when `gtk4-broadwayd` (GTK 4.24.1) aborted on a GLib assertion inside itself (core dumps). `a11y-dialogs` (step 75) and `reader-conversation` (step 88) stop at the same step on `fb5c5a2` without the change; `window-view` passed on a second run | Not this change; Broadway on GTK 4.24.1 |
+
+### 0.5.0 — 2026-10-20
+
+`v0.5.0` is `cdb9ce7`; this machine, rustc 1.98.1, WebKitGTK 2.54.1, GTK 4.24.1 (the headless runs through ADR-022's patched daemon). The release: [v0.5.0](https://github.com/PixDevsApps/sealwax/releases/tag/v0.5.0), at the owner's word ("go ahead, release 0.5.0").
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI on `cdb9ce7`, `SEALWAX_CI_DISPLAY=80 bash tools/ci.sh --ui` | 1,518 passed, 0 failed, 98 ignored; 81 scripts, 7,985 of 7,985 steps; the hostile suite clean (60 cases, `dns=production=0 control=11`, `glib_criticals=0`, 273 s) | Pass |
+| `python3 tools/release.py build` on `v0.5.0` (tagged locally first, pushed only after the build) | makepkg's `check()` 1,087 passed, 0 failed; the binary says `sealwax 0.5.0` and has no path of the home folder; the client ID built in (from the owner's `config.toml`) | Pass |
+| The push | A scan of `2f7d980..cdb9ce7`'s diff: no working doc, no address but fictional `example.test` ones, no client ID; `main` and `v0.5.0` pushed | Pass |
+| The release `v0.5.0` (`tools/release.py github`) | GitHub's latest, four files; INSTALL.md's download URL downloaded with curl: the same SHA-256 as the build (`2ae75a98…`), read by pacman as `sealwax 0.5.0-1`, `hunspell` among its optional dependencies | Pass |
+| Installing 0.5.0 on this machine (the owner, with INSTALL.md's command) | pacman's log: `upgraded sealwax (0.4.9-1 -> 0.5.0-1)` at 09:05:29; `pacman -Q` reads `sealwax 0.5.0-1`; `/usr/bin/sealwax` byte for byte the build's (SHA-256 `65c3d3df…`) and says `sealwax 0.5.0`; the running Sealwax started at 09:05:48 from it | Pass |
 
 ### 0.4.9 — 2026-10-19
 

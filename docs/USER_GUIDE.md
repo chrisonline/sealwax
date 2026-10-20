@@ -2,7 +2,7 @@
 
 Synced: 2026-10-12
 
-This guide is for people who use Sealwax every day. It describes Sealwax 0.4.9, before 1.0. Where a command is in the keymap or the menus but does nothing yet, this guide says "not built yet". Every address and name in the examples is fictional.
+This guide is for people who use Sealwax every day. It describes Sealwax 0.5.1, before 1.0. Where a command is in the keymap or the menus but does nothing yet, this guide says "not built yet". Every address and name in the examples is fictional.
 
 - [Installing](#installing)
 - [First start and adding an account](#first-start-and-adding-an-account)
@@ -25,6 +25,8 @@ This guide is for people who use Sealwax every day. It describes Sealwax 0.4.9, 
 [INSTALL.md](../INSTALL.md) explains every step in plain words: installing Sealwax with one command, updating and uninstalling it, and building it from source.
 
 Sealwax is made for Omarchy 4 (Arch Linux, Hyprland), and also runs on other Linux desktops with GTK 4 and a Secret Service such as gnome-keyring.
+
+**Updating.** **Check for Updates…** in the main menu (or the palette) asks GitHub which Sealwax release is the latest and says whether you have it. When a newer one is out, it shows the command that installs it, with a **Copy Command** button: paste the command into a terminal, press Enter and type your computer's password when asked, then quit Sealwax (Ctrl+Q) and start it again. Sealwax never checks by itself and never installs anything itself.
 
 ## First start and adding an account
 
@@ -50,7 +52,7 @@ Outlook.com and Microsoft 365 accept only Microsoft sign-in for mail apps, so fo
 
 1. Sealwax opens Microsoft's sign-in page in your default browser and shows "Waiting for the browser…" with **Cancel**. If you closed the tab too soon, **Open the sign-in page again** opens it again.
 2. Sign in and approve Sealwax. Sealwax never sees your password; it keeps a sign-in token in your keyring. Your address is not put in the sign-in link.
-3. A work or school account may need its organization's admin to approve Sealwax first. The assistant then says "The sign-in was declined".
+3. A work or school account may need its organization's admin to approve Sealwax first ([below](#work-or-school-microsoft-accounts)). The browser then shows "Need admin approval" and doesn't come back: after a minute the assistant says "Still waiting for Microsoft." If you leave Microsoft's page without approving, it says "The sign-in was declined".
 4. If the Microsoft account you signed in with isn't the address you typed, the assistant asks first ("Not the address you typed"): **Send from** the address you signed in with, or **Keep** the address you typed. Microsoft refuses mail from an address your account isn't allowed to send from, so keep the typed one only if it's an alias or a shared mailbox you may send from. **Back** signs in again.
 
 **The client ID.** Sign in with Microsoft needs a Microsoft client ID: the registration that identifies Sealwax to Microsoft. Sealwax's packages carry one, so with an installed package there is nothing to set up. A build from source has one only if it was given one when it was compiled; you can also give your own in `config.toml`, which wins over a built-in one and applies as soon as you save the file:
@@ -63,6 +65,14 @@ client_id = "00000000-0000-0000-0000-000000000000"
 Without a client ID the assistant says "Microsoft sign-in isn't available in this build of Sealwax yet." and how to set one. [OAUTH-SETUP.md](OAUTH-SETUP.md) shows how to register a client ID in Microsoft Entra. The ID isn't a secret (Microsoft's client for desktop apps is public, and Sealwax keeps no client secret), but keep your own registration out of public repositories.
 
 When Microsoft ends the session later, a banner says that the account "needs you to sign in again", with **Sign in**. A Microsoft account is always an IMAP account in Sealwax; POP3 with Sign in with Microsoft isn't supported.
+
+### Work or school Microsoft accounts
+
+Many organizations don't let their people approve an app themselves when Microsoft hasn't verified its publisher yet, and Sealwax's publisher isn't verified yet. Signing in with such an account, the browser shows Microsoft's **Need admin approval** page instead of coming back to Sealwax, and after a minute the assistant says "Still waiting for Microsoft." Nothing is wrong with your account or with Sealwax: your organization has to approve Sealwax once, and then you sign in as usual. **Cancel** the sign-in meanwhile.
+
+Ask your IT admin to approve Sealwax for your organization (in Microsoft's words, to grant admin consent to it). If Microsoft's page offers to request approval, send that request. Tell the admin what Sealwax asks for: to read and manage your mail over IMAP and send mail over SMTP as you (`IMAP.AccessAsUser.All`, `SMTP.Send`), to stay signed in (`offline_access`), and your name and sign-in name (`openid`, `profile`). The admin needs Sealwax's client ID: it's in the address of Microsoft's sign-in page, after `client_id=`. [OAUTH-SETUP.md](OAUTH-SETUP.md) shows the admin how to approve it. Once approved, choose **Sign in with Microsoft** again.
+
+Personal Microsoft accounts (Outlook.com, Hotmail, Live) aren't affected: you approve Sealwax yourself on Microsoft's page.
 
 ### Gmail: with an app password
 
@@ -142,7 +152,7 @@ What a POP3 account does:
 
 Three panes, left to right:
 
-- **The sidebar:** **New message** at the top; **All Inboxes**; each account with its Inbox, Drafts, Sent, Archive, Junk and Trash and their unread counts, its other folders under **More folders** (other mail programs' housekeeping folders are left out: Outlook's Sync Issues and, on Outlook.com and Microsoft 365, Notes and Outbox; Mailspring's folder while it is empty); at the bottom a summary of the accounts and a button that opens `config.toml`. Click an account's heading (or press Enter, Space, Left or Right on it) to fold its folders away under it; folded, the heading shows the account's unread count. Sealwax remembers which accounts are folded, and the view you last had: a new window opens on it, All Inboxes or a folder, as long as it still exists. Subfolders show indented under their folder by their own name, the Inbox's under the Inbox; a folder with subfolders has an arrow that folds them away (or press Left on it, and Right to open them again), and Sealwax remembers that too, as it remembers whether **More folders** is open: the sidebar comes back as you left it, also after you rename a folder ([Folders](#folders-new-rename-delete)).
+- **The sidebar:** **New message** at the top; **All Inboxes**; each account with its Inbox, Drafts, Sent, Archive, Junk and Trash and their unread counts, its other folders under **More folders** (other mail programs' housekeeping folders are left out: Outlook's Sync Issues and, on Outlook.com and Microsoft 365, Notes and Outbox; Mailspring's folder while it is empty); at the bottom a summary of the accounts and a button that opens `config.toml`. Click an account's heading (or press Enter, Space, Left or Right on it) to fold its folders away under it; folded, the heading shows the account's unread count. Sealwax remembers which accounts are folded, and the view you last had: a new window opens on it, All Inboxes or a folder, as long as it still exists. Subfolders show indented under their folder by their own name, the Inbox's under the Inbox; a folder with subfolders has an arrow that folds them away (or press Left on it, and Right to open them again); folded, its count adds the unread mail in its subfolders to its own, so none goes unseen, and opened again each folder counts its own. Sealwax remembers the folds too, as it remembers whether **More folders** is open: the sidebar comes back as you left it, also after you rename a folder ([Folders](#folders-new-rename-delete)).
 - **The message list:** the search field, the filter chips **All**, **Unread**, **Starred** and **Attachments**, then the messages in sections: Today, Yesterday, This week, This month, Older. A row shows the sender, the time, the subject, a two-line preview, and marks for unread, starred, attachments and the size of the conversation. The **main menu** button is at the end of the list's bar.
 - **The reader:** the selected message's conversation ([Reading mail](#reading-mail)).
 
@@ -256,7 +266,7 @@ The rules' commands have no keys; `keys.toml` can give them one (`edit-rules`, `
 
 The buttons at the right of its header **minimize** it to a bar at the bottom of the window (it shows the subject; click the bar to open it again), **expand** it to a larger card in the middle of the window (click beside it, or **Shrink**, to put it back), and **close** it, keeping the draft (**Close Composer**, Ctrl+W, does the same from the keyboard). You can have several open at once: each new one opens to the left of the others, and the oldest minimize when there is no more room. In a narrow window the composer fills the window. While you write, the window's own shortcuts still work: Ctrl+N starts another message, and the command palette (Ctrl+Shift+P or F1) also lists the composer's commands. Minimizing or closing the composer puts the keyboard focus back where it was. Without a Sealwax window open (a `mailto:` link, `sealwax --compose`), the window opens with the composer in it. Closing the window keeps every draft in it.
 
-Pasted text keeps simple formatting and loses the rest; **Paste as Plain Text** (Ctrl+Shift+V) pastes it without any. Spell checking works when a hunspell dictionary for your language is installed (`hunspell-en_us`, for example); the languages come from your locale.
+Pasted text keeps simple formatting and loses the rest; **Paste as Plain Text** (Ctrl+Shift+V) pastes it without any. Spell checking works when `hunspell` and a hunspell dictionary for your language are installed (`sudo pacman -S hunspell hunspell-en_us`, for example); the languages come from your locale.
 
 **Reply, Reply All, Forward.** `r` (Ctrl+R), `a` (Ctrl+Shift+R) and `f` (Ctrl+L), or the three buttons on each expanded message's card. They answer the message you are on in the reader. Reply answers the sender; Reply All everyone the message went to, except you. A reply goes out from the address the message was sent to, when that is one of your identities. A message's header shows whom it went to besides you: "to me, Tomas Berg and 2 others".
 
@@ -339,13 +349,25 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | Navigation | Previous Message | k, Up | k: list and reader; Up: the list's own | `previous-message` |
 | Navigation | Next Message in Conversation | n | list and reader | `next-in-conversation` |
 | Navigation | Previous Message in Conversation | p | list and reader | `previous-in-conversation` |
-| Navigation | Open Message | Enter, o | list | `open-message` |
+| Navigation | Scroll Message Down | d | list and reader | `scroll-message-down` |
+| Navigation | Scroll Message Up | Shift+D | list and reader | `scroll-message-up` |
+| Navigation | Open Message | Enter, o, l | list | `open-message` |
 | Navigation | Back to List | Escape, u | reader | `back-to-list` |
 | Navigation | Search | /, Ctrl+F | /: list and reader; Ctrl+F: anywhere | `search` |
 | Navigation | Go to Inbox | g then i | list and reader | `go-to-inbox` |
 | Navigation | Go to Starred | g then s | list and reader | `go-to-starred` |
 | Navigation | Go to Sent | g then t | list and reader | `go-to-sent` |
 | Navigation | Go to Drafts | g then d | list and reader | `go-to-drafts` |
+| Navigation | Go to All Inboxes | g then a | list and reader | `go-to-all-inboxes` |
+| Navigation | Go to Account 1 | g then 1 | list and reader | `go-to-account-1` |
+| Navigation | Go to Account 2 | g then 2 | list and reader | `go-to-account-2` |
+| Navigation | Go to Account 3 | g then 3 | list and reader | `go-to-account-3` |
+| Navigation | Go to Account 4 | g then 4 | list and reader | `go-to-account-4` |
+| Navigation | Go to Account 5 | g then 5 | list and reader | `go-to-account-5` |
+| Navigation | Go to Account 6 | g then 6 | list and reader | `go-to-account-6` |
+| Navigation | Go to Account 7 | g then 7 | list and reader | `go-to-account-7` |
+| Navigation | Go to Account 8 | g then 8 | list and reader | `go-to-account-8` |
+| Navigation | Go to Account 9 | g then 9 | list and reader | `go-to-account-9` |
 | Messages | Archive | e, y | list and reader | `archive` |
 | Messages | Delete | #, Delete | list and reader | `delete` |
 | Messages | Move to Junk | !, Ctrl+J | list and reader | `junk` |
@@ -405,6 +427,7 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | General | Rebuild Search Index | — |  | `rebuild-search-index` |
 | General | Start Sealwax at Login | — |  | `start-at-login` |
 | General | Make Sealwax the Default Mail App… | — |  | `default-mail-app` |
+| General | Check for Updates… | — |  | `check-for-updates` |
 | General | Quit | Ctrl+Q | anywhere | `quit` |
 | Rules | Rules… | — |  | `edit-rules` |
 | Rules | Create Rule from Message… | — |  | `new-rule-from-message` |
@@ -415,7 +438,9 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 
 "—" means the command has no key: the palette, a menu or a button reaches it, and `keys.toml` can give it one.
 
-**Going places.** Go to Inbox, Sent and Drafts (`g` then `i`, `t`, `d`) show that folder of the account the list shows (in All Inboxes, the selected message's account, else the first); Go to Inbox in All Inboxes stays there. Go to Starred (`g` then `s`) turns on the **Starred** chip, as there is no Starred folder. Back to List (Escape or `u` in the reader) puts the keyboard focus in the message list, and in the one-pane layout shows the list, as the reader's back button does.
+**Going places.** Go to Inbox, Sent and Drafts (`g` then `i`, `t`, `d`) show that folder of the account the list shows (in All Inboxes, the selected message's account, else the first); Go to Inbox in All Inboxes stays there. Go to Starred (`g` then `s`) turns on the **Starred** chip, as there is no Starred folder. Back to List (Escape or `u` in the reader) puts the keyboard focus in the message list, and in the one-pane layout shows the list, as the reader's back button does. Go to All Inboxes (`g` then `a`) shows every account's Inbox together, and Go to Account 1 to 9 (`g` then `1` to `9`) shows that account's Inbox, counting the accounts as the sidebar lists them.
+
+**Reading from the list.** Scroll Message Down and Up (`d` and Shift+D) move the open message half a screen, from the list or the reader, so you can read on without leaving the list; `j` and `k` still move between messages. `l` opens the message, as Enter and `o` do.
 
 **Not built yet.** Toggle Sidebar (Ctrl+Shift+S, F9) is in the keymap, but its keys do nothing yet; the Keyboard Shortcuts dialog marks it "Not available yet".
 
@@ -554,8 +579,9 @@ Sealwax talks only to the servers your mail needs, and keeps each message sealed
 | Servers that hold a message's images | Your IP address and the time, as for any web page | Only for a message or sender you allowed |
 | Your browser | A link you chose to open | When you open it |
 | Your desktop's notification server | A new message's sender and subject (only a count with `show = "count"`) | New mail, unless notifications are off |
+| GitHub (`api.github.com`) | A request for Sealwax's latest release, with nothing about you in it; GitHub sees your IP address | Only when you choose Check for Updates… |
 
-Nothing else: **no telemetry**, no update checks, no read receipts, no avatar lookups.
+Nothing else: **no telemetry**, no automatic update checks, no read receipts, no avatar lookups.
 
 - **Messages stay sealed.** No script in a message ever runs; nothing from the internet loads until you allow it; links open only in your browser, with a warning when a link's text doesn't match its address; attachments that can run programs are never opened.
 - **Passwords and sign-in tokens** are kept only in your keyring (the Secret Service: gnome-keyring on Omarchy), never in a file, the store or a log. Without a keyring, Sealwax keeps them in memory until it quits and says so in a banner ("No keyring found").
@@ -623,6 +649,7 @@ The folders follow `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG
 - **"Couldn't save the password"** while adding an account: the keyring refused it; make sure it runs and is unlocked.
 - **"…'s mailbox is full"** The server has no room: new mail may bounce and changes can't be saved there. Delete mail you don't need, or ask your provider for more space.
 - **"Microsoft sign-in isn't available in this build of Sealwax yet."** Set a client ID ([above](#outlookcom-hotmail-and-microsoft-365-sign-in-with-microsoft)).
+- **"Still waiting for Microsoft."** The browser didn't come back from Microsoft's sign-in page. If it shows "Need admin approval", your organization must approve Sealwax first ([above](#work-or-school-microsoft-accounts)); otherwise finish signing in there, or **Open the sign-in page again**. Sealwax stops waiting after 5 minutes.
 - **"A message may have been sent"** See [Sending](#writing-mail).
 - **Old mail is missing.** The first sync keeps the last 90 days of each folder; scroll to the end of the list to load older mail.
 - **Search misses a message** you know is there: in all folders, Trash and Junk are left out; a message whose text isn't downloaded is found by its headers and preview only. **Rebuild Search Index** (palette) indexes the stored mail again.

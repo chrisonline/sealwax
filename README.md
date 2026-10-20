@@ -12,13 +12,13 @@ Open a terminal (**Super + Return** on Omarchy), paste this line and press **Ent
 curl -L -o /tmp/sealwax.pkg.tar.zst https://github.com/PixDevsApps/sealwax/releases/latest/download/sealwax-x86_64.pkg.tar.zst && sudo pacman -U /tmp/sealwax.pkg.tar.zst
 ```
 
-Run the same line again to update. To uninstall: `sudo pacman -R sealwax`.
+Run the same line again to update; **Check for Updates…** in Sealwax's main menu says when there is a new version and gives you the line. To uninstall: `sudo pacman -R sealwax`.
 
 [INSTALL.md](INSTALL.md) explains every step in plain words: installing, starting, updating and uninstalling, and what to do if something goes wrong. [What's new](CHANGELOG.md) lists each release.
 
 ## Status
 
-**Version 0.4.9.** The features below are built and tested, and its author reads their own mail with it every day; 1.0 follows a longer period of daily use with real accounts. Testing so far is on local test mail servers (Dovecot, Stalwart, Mailpit), with Microsoft sign-in checked live on an Outlook.com account and the author's own accounts in daily use; other providers are welcome to report how it goes. The [1.0 release notes](docs/RELEASE_NOTES.md) are drafted.
+**Version 0.5.1.** The features below are built and tested, and its author reads their own mail with it every day; 1.0 follows a longer period of daily use with real accounts. Testing so far is on local test mail servers (Dovecot, Stalwart, Mailpit), with Microsoft sign-in checked live on an Outlook.com account and the author's own accounts in daily use; other providers are welcome to report how it goes. The [1.0 release notes](docs/RELEASE_NOTES.md) are drafted.
 
 ## Features
 
@@ -38,7 +38,7 @@ Run the same line again to update. To uninstall: `sudo pacman -R sealwax`.
 
 ## Requirements
 
-Omarchy, or Arch Linux, on x86_64, with GTK 4.18+, libadwaita 1.9+, WebKitGTK 6.0 2.52+, SQLite 3.43+ and a Secret Service such as gnome-keyring; optionally hunspell dictionaries for spell checking. Omarchy 4 is the desktop it is made for. Building needs Rust 1.92+.
+Omarchy, or Arch Linux, on x86_64, with GTK 4.18+, libadwaita 1.9+, WebKitGTK 6.0 2.52+, SQLite 3.43+ and a Secret Service such as gnome-keyring; optionally `hunspell` and a hunspell dictionary for spell checking. Omarchy 4 is the desktop it is made for. Building needs Rust 1.92+.
 
 ## Documentation
 

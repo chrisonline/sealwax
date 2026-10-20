@@ -30,7 +30,7 @@ Use this page for decisions with meaningful long-term cost. Keep each entry shor
 | 018 | Logging and privacy | Accepted (plan approval); amended after S1 (third-party trace logs); the caps and autodetect's requests built in M2; the HTML parser capped in M6 |
 | 019 | Corner radius follows Hyprland | Accepted (user decision at the DESIGN gate); built in M1 |
 | 020 | Folders and rules: Sieve run by Sealwax | Accepted (user decision, 2026-10-09); built: folders (A1), the Sieve subset (A2), the rules on new mail (B1) and in the app (B2); the user's review next |
-| 021 | A public repository, releases on GitHub and the AUR | Accepted (user decisions, 2026-10-09): 0.4.0; a fresh public repository; GitHub Releases and `sealwax-bin` on the AUR (waiting: the AUR closed new accounts the same day); no update check in Sealwax. Amended 2026-10-18 (user decision): no AUR package; GitHub Releases only |
+| 021 | A public repository, releases on GitHub and the AUR | Accepted (user decisions, 2026-10-09): 0.4.0; a fresh public repository; GitHub Releases and `sealwax-bin` on the AUR (waiting: the AUR closed new accounts the same day); no update check in Sealwax. Amended 2026-10-18 (user decision): no AUR package; GitHub Releases only. Amended 2026-10-20 (user request): Check for Updates…, run only by the user |
 | 022 | The headless checks run GTK's Broadway daemon with a patch of Sealwax's | Accepted (2026-10-19) as a stopgap: GTK 4.24.1's daemon aborts in about 30 of the 81 CI scripts; dropped once a GTK release fixes it |
 
 ## ADR-001 — Standalone native application (2026-10-04)
@@ -601,6 +601,18 @@ Built in M3.
 
 **Decision:** When the account a Microsoft sign-in belongs to isn't the address typed (compared without case), the setup assistant asks before it saves: send from the address signed in with, which then becomes the account's address, or keep the one typed (an alias or a shared mailbox can be right). It warns and never blocks. The engine takes a finished sign-in for an add of either address (`Kept::fits`); Back lets the sign-in go (`CancelSignIn`). Signing in again for an account isn't asked.
 
+### ADR-008 amendment — work and school accounts: explained now, the publisher verified later (2026-10-19)
+
+The owner's decision on the sign-off sheet (2026-10-19), "Both": for 1.0, the user guide and OAUTH-SETUP.md explain what a work or school organization's IT admin must approve (the admin-consent link and the permissions Sealwax asks for), and Sealwax says, after a minute of waiting for Microsoft, that a work account may need its admin's approval. Publisher verification (the Microsoft AI Cloud Partner Program and a verified publisher domain) follows when the owner has time; it is their paperwork, not code. Issue #15 may be this case; its reporter hasn't answered.
+
+### ADR-008 amendment — packagers may build in the project's client ID (2026-10-19)
+
+The owner's decision on the sign-off sheet (2026-10-19): packagers of other distributions (such as the Nix recipe in issue #11) may build the project's Microsoft client ID into their packages with `SEALWAX_MICROSOFT_CLIENT_ID`, on request. It is a public client's ID and is in every release binary already; sign-ins through it count as the project's app, so the packager says where the package is published. The ID stays out of the repository. BUILD.md "Packaging" says how.
+
+### ADR-008 amendment — POP3 accounts sign in with a password in 1.0 (2026-10-19)
+
+The owner's decision on the sign-off sheet (2026-10-19), for M8: Sign in with Microsoft asks for IMAP's and SMTP's permissions only, and a POP3 account signs in with a password in 1.0. Microsoft accounts use IMAP.
+
 ## ADR-009 — Settings in files: config.toml, keys.toml, accounts.toml (2026-10-04)
 
 **Status:** Proposed.
@@ -672,6 +684,10 @@ The user's word (2026-10-11, "build #5 and #3", on [issue #5](https://github.com
 ### ADR-009 amendment — the accounts' rules files (2026-10-09)
 
 Each account's rules are a Sieve script in `$XDG_CONFIG_HOME/sealwax/rules/<account key>.sieve` ([ADR-020](#adr-020--folders-and-rules-sieve-run-by-sealwax-2026-10-09)), a settings file the user may edit by hand (`infrastructure::rules`): a missing file is no rules; it is read as at most 1 MiB of UTF-8 and compiled again whenever its modification time changes; it is written atomically, 0600 in a 0700 folder, through a symbolic link as `accounts.toml` is; it goes with its account. A file that can't run (unreadable, or a script that doesn't check) runs nothing and is reported once per change (`Event::RulesFailed`).
+
+### ADR-009 amendment — a folded folder counts its subfolders' unread (2026-10-19)
+
+The owner's decision on the sign-off sheet (2026-10-19): a folder whose subfolders are folded away shows its own unread plus theirs, at every level, as Thunderbird does; opened again, each folder shows its own. Drafts keeps its drafts count. Screen readers hear "<folder>, N unread with its subfolders" when the sum differs from its own count. All Inboxes, a folded account's heading, the rail, the list's heading, More folders and Mark Folder as Read are unchanged. The sum comes from the sidebar's model, no SQL; folding a folder rebuilds the folder list, as folding an account does, keeping the focus.
 
 ## ADR-010 — Name and app-id (2026-10-04)
 
@@ -834,6 +850,10 @@ From a user's report on X (Fastmail, a laptop running Omarchy): after a delete i
 ### ADR-011 amendment — a pings filter in every view, as WebKitGTK 2.54 dropped `LinkDNSPrefetch` (2026-10-19)
 
 WebKitGTK 2.54 removed the `LinkDNSPrefetchEnabled` preference ([310198@main](https://commits.webkit.org/310198@main), WebKit bug 311010): `Settings::all_features()` no longer lists `LinkDNSPrefetch`, and `<link rel=dns-prefetch>` with an http(s) URL always runs. The only check left before the lookup is the content filter, which WebKit asks about the URL as a `ping` load (as it does for `<link rel=preconnect>` and `<a ping>`). The reader's content filter blocks it, but a message whose images the user allowed loads without that filter, so on 2.54 such a message could make WebKit look up any name it lists. Every reader view now also carries a second compiled filter that blocks `resource-type: ping` loads, whatever the user allowed; it compiles with the content filter, and no view is made, and no HTML shown in one, until both have. The runtime features stay off where WebKit has them, so 2.52 keeps both layers; the unit test expects `LinkDNSPrefetch` up to 2.52 and not from 2.54 (`RETIRED_FEATURES`), so a WebKit that brings it back fails it. Checked on WebKitGTK 2.54.1 under `tools/headless.sh` with the DNS canary: a bare view looked up the names of `<link rel=dns-prefetch>` (all but WebKit's first, dropped while it reads the proxy settings), the same view with the pings filter none; the hostile suite's Show images pass now fails on any name but the images', and fails with the pings filter taken out ([TESTING.md](TESTING.md#dns-prefetch-on-webkitgtk-254--2026-10-19)). Not run on 2.52, which this machine no longer has; WebKit's code for the check is the same there. Rejected: removing `<link>` elements from the HTML before it loads (Sealwax doesn't rewrite message HTML, and the filter also stops preconnects and `<a ping>`, which WebKit checks the same way).
+
+### ADR-011 amendment — moving on and large messages don't wait (2026-10-19)
+
+The owner's decisions on the sign-off sheet (2026-10-19). (1) The 150 ms rule of 2026-10-12 also applies when the selection moves on (`j`/`k`, a click, Previous/Next), not only when the shown message leaves the list: the shown conversation stays at most `LEFT_SHOWN`, then the next shows as far as it is laid out (`Reader::show_next`). A page shown before its first screen is laid out keeps its selected message in place while the bodies above it get their heights, instead of the topmost entry it shows. (2) A body whose inline images must come from the server (a large message stored as its text parts, the images neither stored nor kept in the part cache) counts as laid out once it is measured, without waiting for its `load`: the text shows at once and the images fill in. Tests: `reader-leave` (both cases, with a new `hold-reader-layout` command; without (1) the `j` step stays 3,022.8 ms), `files` (`wait-within 1500` for the large message), `reader-conversation`. (3) A reader in a window starts its web process at startup, after the first frame, instead of when it is first mapped with the first selection: headless, release, the first open after a start went from 107–119 ms (10 runs) to 27–31 ms (8 runs), the first frame unchanged at 300–309 ms (the owner reported about 2 s live, not reproduced headless; the live cause isn't confirmed). The background service, with no window, starts none. (4) The `enable-hyperlink-auditing` setter, which does nothing since WebKitGTK 2.52 and warned at every view, is no longer called in the reader or the composer; `<a ping>` stays blocked by the pings filter.
 
 ## ADR-012 — Repository docs canonical, Notion as a mirror (2026-10-04)
 
@@ -1220,6 +1240,18 @@ The composer docked in the main window (ADR-014's amendment of 2026-10-08) adds 
 
 **Status:** Accepted — user decision, 2026-10-19 ("Yes, add a Close Composer command (save and close) on Ctrl+W."), after a user asked on Reddit for a key to close the composer. A new Composer command, **Close Composer** (`close-composer`), saves the draft and closes the card as its Close button does (a new draft closed before anything was typed is discarded), with **Ctrl+W**, which no other command had. It works from the fields and the body, as the composer's other keys do; the Close button's tooltip names it. Escape in a card still does nothing (the 2026-10-08 amendment): it is too easy to press by accident. This replaces M6's "no Close Composer command".
 
+### ADR-017 amendment — the folder list's heading keys accepted (2026-10-19)
+
+The owner accepted the 2026-10-08 proposal on the sign-off sheet (2026-10-19): on an account's heading in the folder list, Enter or Space folds or opens it, Left folds, Right opens, and Menu or Shift+F10 opens its menu.
+
+### ADR-017 amendment — keys for issues #10 and #12, a small set, proposed (2026-10-19)
+
+The owner chose "a small set for 1.0" on the sign-off sheet (2026-10-19), with the exact keys to approve before anything is built. Proposed: `l` also opens the message (Open Message, with Enter and `o`); Scroll Message Down and Scroll Message Up, half a page, from the list and the reader, on `d` and `Shift+D` (or `Ctrl+D` and `Ctrl+Shift+D`; the latter opens GTK's inspector where its key is on); Go to All Inboxes on `g a`; Go to Account 1 to 9, that account's Inbox in the sidebar's order, on `g 1` to `g 9`. The letter hints over the sidebar wait for after 1.0. Nothing is built until the owner answers.
+
+### ADR-017 amendment — the keys for issues #10 and #12 accepted and built (2026-10-19)
+
+The owner accepted the proposal above on the sign-off sheet (D12, 2026-10-19), as proposed: `l` also opens the message (Open Message: Enter, `o`, `l`); Scroll Message Down and Up on `d` and `Shift+D`, half the column, from the list and the reader (`scroll-message-down`, `scroll-message-up`); Go to All Inboxes on `g a`; Go to Account 1 to 9 on `g 1` to `g 9` (`go-to-account-N`), the Inbox of the sidebar's account in that place, nothing for a place no account fills. The palette lists them under Navigation. The letter hints over the sidebar wait for after 1.0. Tests: the registry's (`the_design_keymap`, `the_go_to_sequences_resolve`), `go_to`'s `account_inbox`, `triage-keys` (`l`, `g a`, `g 1`, `g 9`), `reader-conversation` (Shift+D twelve times to the top, `d` down, Shift+D up).
+
 ## ADR-018 — Logging and privacy (2026-10-04)
 
 **Status:** Accepted — plan approval, 2026-10-04.
@@ -1319,6 +1351,10 @@ Five registry commands without keys, at the registry's end in a new Rules catego
 
 **Not chosen:** a checkbox ("Also apply to the Inbox"), as Outlook and Gmail have it, since the user asked for it to happen at once; running the whole script; folders other than the Inbox.
 
+### ADR-020 amendment — the rule-run choices kept (2026-10-19)
+
+The owner kept the choices of 2026-10-09 on the sign-off sheet (2026-10-19): saving a rule runs that one rule on the Inbox's mail, with Undo; switching a rule on, renaming, reordering or bringing it back with Undo doesn't run it; changing what it matches or does runs it again.
+
 ## ADR-021 — A public repository, releases on GitHub and the AUR (2026-10-09)
 
 **Status:** Accepted — user decisions, 2026-10-09 ("0.4.0 (Recommended)", "Fresh public repo (Recommended)", "AUR + GitHub Releases (Recommended)", "No in-app check (Recommended)"), on the user's "I am satisfied with where we are now, so I want the repo to be public, so bump the version one level. it needs instructions to install and uninstall, and it must be explained in a way that non tech persons can understand. Is there also a way to auto update the users installed version when I push an update? or a check for new update in the installed version".
@@ -1350,6 +1386,18 @@ The same day, the AUR answered the owner's registration with "New account regist
 **Reason:** the owner's judgement that the AUR won't be a route for Sealwax (its registration closed to new accounts on 2026-10-09). Not checked here beyond this machine: Omarchy's own scripts on it still update AUR packages (`/usr/share/omarchy/bin/omarchy-update-aur-pkgs` runs `yay -Sua` when the AUR is reachable, read 2026-10-18).
 
 **Consequences:** nothing updates Sealwax by itself: an update is the install command run again (INSTALL.md, "Updates"). ADR-021's "Omarchy's menu first" for INSTALL.md no longer applies.
+
+### ADR-021 amendment — Check for Updates, only when the user asks (2026-10-20)
+
+**Status:** Accepted — the user's request, 2026-10-20: "I need a check for updates in Sealwax. It should be placed between the Rules and Quit in the dropdown menu. The app should not automatically check for updates, but only when the user click that button/link in the menu. It should not direct the user to github, but check the users version against the repo version. If there is no new vesion, just state something like \"You have the latest version\". If there is a new version available, add a copy-able code the user can paste into his/hers terminal to update. As it is now the users needs to periodically check github for updates themselves, which is not optimal".
+
+**Decision:** a command, **Check for Updates…** (`check-for-updates`, General, the application's; no default key, ADR-017), in a section of the main menu of its own, after the settings section (which ends with Rules…) and above Quit (the registry keeps a category's commands together, so a General command can't follow Rules… within one section). Run, it opens a dialog ("Checking for updates…", Cancel) and the engine makes one HTTPS GET of `https://api.github.com/repos/PixDevsApps/sealwax/releases/latest` (GitHub's latest release: never a draft or a pre-release), with the User-Agent `Sealwax`, no cookie, no Referer, no proxy, the platform verifier, 20 s at most. Its `tag_name` is read as `vX.Y.Z` with plain numbers and nothing else, and compared with the running version (`sealwax_domain::updates`). The dialog then says "You have the latest version" (also for a build newer than the latest release), "Sealwax X.Y.Z is available" with INSTALL.md's install command for that release's package (`releases/download/vX.Y.Z/sealwax-x86_64.pkg.tar.zst`, built from the parsed numbers), selectable and with a **Copy Command** button, or why it couldn't check (offline, timed out, a certificate that didn't verify, GitHub limiting requests, no release, an unreadable answer). Sealwax never checks by itself, never opens GitHub in the browser, and never runs the command.
+
+**Reason:** ADR-021's no-check rested on the AUR keeping Sealwax current; without an AUR package (the amendment of 2026-10-18) people had to watch GitHub themselves. A check the user starts keeps the promise that Sealwax contacts nothing on its own: the request carries nothing about the user, and GitHub learns only that some Sealwax asked.
+
+**Alternatives:** a check at startup or on a timer, opt-in or not (ADR-021's reasons against still hold, and the user asked for none); opening the releases page (the user asked not to); `github.com/…/releases/latest`'s redirect instead of the API (no rate limit, but it reads an HTML route's Location header, which GitHub may change); installing the update from Sealwax (it would need root through polkit, and a package downloaded and run by the app itself).
+
+**Consequences:** GitHub's API answers 60 requests an hour per address without an account; a network over that limit gets "Try again in an hour". The dialog's command assumes the package install of INSTALL.md (pacman); a build from source gets the same command, which replaces it with the release's package. The user guide's privacy table names GitHub, only on request; INSTALL.md's "Updates" points to the command.
 
 ## ADR-022 — The headless checks run GTK's Broadway daemon with a patch of Sealwax's (2026-10-19)
 

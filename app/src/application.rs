@@ -34,6 +34,7 @@ use crate::theme::{self, ThemeController};
 use crate::triage::{
     self, Controller, Directory, MARK_READ_ON_OPEN, Notice, OpsBackend, Origin, Target,
 };
+use crate::updates;
 use crate::window::{self, Attention, BannerAction, Pane, Window};
 use gtk4::{gio, glib};
 use libadwaita as adw;
@@ -797,6 +798,7 @@ impl AppState {
         outbox::install(self);
         notify::install(self);
         search::install(self);
+        updates::install(self);
         crate::rules::install(self);
         background::install(app, self);
         if let Some(options) = self.config.engine.clone() {
@@ -2328,6 +2330,7 @@ impl AppState {
             crate::labels::set_colors(&prefs.config().labels);
         }
         reader.connect_engine(&self.engine);
+        reader.prewarm();
         window.set_reader_toolbar(&reader.toolbar());
         // The batch page stands in for the reader: the Reader scope's keys work there too.
         reader
@@ -2345,17 +2348,7 @@ impl AppState {
             if state.reader_shows.replace(Some(id)).is_none() {
                 target.set_reader(&reader.widget());
             }
-            let left = reader.message().is_some_and(|shown| {
-                shown != id
-                    && state
-                        .list()
-                        .is_some_and(|list| list.position(shown).is_none())
-            });
-            if left {
-                reader.show_after_leave(id);
-            } else {
-                reader.show(id);
-            }
+            reader.show_next(id);
             state.update_position();
         });
         let weak = Rc::downgrade(self);
