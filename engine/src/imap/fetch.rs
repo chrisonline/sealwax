@@ -232,6 +232,27 @@ mod tests {
         assert_eq!(internal_date("garbage"), None);
     }
 
+    /// Proton Mail Bridge's reply for a message with `Content-Disposition: inline` and no
+    /// parameters: an empty list, `("inline" ())`, that imap-proto 0.17 refused, which broke the
+    /// connection and every pass after it (vendor/README.md).
+    #[test]
+    fn bridges_empty_disposition_parameters_parse() {
+        let reply = b"* 1 FETCH (UID 1 FLAGS (\\Recent \\Seen) \
+            INTERNALDATE \"12-May-2022 13:57:48 +0000\" RFC822.SIZE 2418 \
+            BODYSTRUCTURE (\"text\" \"plain\" (\"charset\" \"utf-8\") NIL NIL \
+            \"quoted-printable\" 908 27 NIL (\"inline\" ()) NIL NIL) \
+            BODY[HEADER.FIELDS (SUBJECT)] {16}\r\nSubject: Hello\r\n BODY[TEXT]<0> {2}\r\nHi)\r\n";
+        let (rest, response) = async_imap::imap_proto::Response::parse(reply).unwrap();
+        assert!(rest.is_empty());
+        let async_imap::imap_proto::Response::Fetch(1, attributes) = response else {
+            panic!("a FETCH response");
+        };
+        let found = super::fetched(&attributes).unwrap();
+        assert_eq!(found.uid, 1);
+        assert!(found.structure.plain);
+        assert!(!found.structure.attachments);
+    }
+
     fn fetched(header: &str, preview: &str) -> Fetched {
         Fetched {
             uid: 42,

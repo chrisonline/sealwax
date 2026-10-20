@@ -5,6 +5,7 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 ## Not released yet
 
 - **Proton Mail labels show on your mail:** a message you labelled in Proton now shows its labels as small chips after its subject in the message list, and under the sender in the reader. Sealwax keeps the label folders that Proton Mail Bridge lists under **Labels** up to date by itself, so the labels show without opening those folders first. Labels are shown, not changed: label and unlabel mail in Proton's own apps, and Sealwax follows. Bridge doesn't pass on Proton's label colours, so give each label a colour of your own under `[labels]` in `config.toml` (`Work = "teal"`), from the eight account colours; labels without one are grey.
+- **Proton Mail syncs every folder again:** Proton Mail Bridge describes some messages in a way the mail standard doesn't allow, and Sealwax broke off the connection each time it met one, so the folders listed after it (Archive, Trash and others) never finished downloading. Sealwax now reads it.
 - **Ctrl+W closes the composer:** a new command, **Close Composer**, saves the draft and closes the composer as its Close button does, from anywhere in it. `keys.toml` can give it another key (`close-composer`).
 
 ## 0.4.9 — 2026-10-19
