@@ -749,6 +749,12 @@ The brand colours belong to the icon and wordmark only; the app's chrome keeps f
 - **Unchanged:** the brand colours of the wordmark, and the chrome following the Omarchy theme (ADR-004).
 - *Amended the same day (the user: "restart the shell and add the scalable SVG"):* a scalable SVG carrying the 512 px PNG joins the fixed sizes. Omarchy's shell (Quickshell, Qt) keeps the icon paths it found at its start: after the upgrade it still asked for the envelope tile's `scalable/apps/…svg`, gone, and its dock showed the "icon missing" checkerboard until the shell restarted. Its icon index also lists SVGs before PNGs and otherwise takes whichever fixed size it finds first. The SVG is at that path again and is the same picture at every size.
 
+### ADR-010 amendment — a vector mail icon in this fork (2026-10-20)
+
+**Status:** the fork owner's decision (chrisonline/sealwax), 2026-10-20: "Change it to a fresher modern mail icon", then "C: Navy + green" of three drawn candidates (a white envelope on a blue tile, the same with a red seal, a green envelope on a navy tile). For this fork; the project's icon stays the seal above.
+
+**Decision:** the app icon, and so the notifications' (`ICON_NAME`), is a green envelope (`#6abf4b`, a gradient from `#8ad46c` to `#4f9e33`, with a soft green glow) on a navy rounded tile (`#1a1a2e` to `#2a2a46`, a faint light rim), the envelope's flap a navy stroke. It is drawn as vectors: `packaging/icons/source/sealwax-icon.svg` is the master and the scalable icon itself; `tools/make-icons.py` renders the PNGs at 16 to 512 px from it with librsvg (`rsvg-convert`). The seal photograph (`sealwax-seal.png`) is gone from the fork. Every size shows the envelope; on dark panels the tile blends in and the green envelope carries the icon.
+
 ## ADR-011 — Reading pane: approach A with hardened WebKit (2026-10-04)
 
 **Status:** Proposed. S2 decides; approach B is the fallback.

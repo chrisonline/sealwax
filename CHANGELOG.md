@@ -8,6 +8,7 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **Proton Mail syncs every folder again:** Proton Mail Bridge describes some messages in a way the mail standard doesn't allow, and Sealwax broke off the connection each time it met one, so the folders listed after it (Archive, Trash and others) never finished downloading. Sealwax now reads it.
 - **Messages open at once with GNOME's text scaling:** with a text scaling factor other than 100 %, Sealwax waited three seconds before showing each message, and made its body taller than its text. It now measures messages in the right unit.
 - **HTML signatures:** a signature can now be a designed HTML file, with your logo, colours, fonts and links, per account and per sender address ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)). Name it with `signature_html = "signatures/work/signature.html"` in `accounts.toml` and put its images beside it: they go inside the message, so recipients see the logo without loading anything from the web. If the file can't be used, the composer says why and your plain signature stands in.
+- **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
 
 ## 0.5.1 — 2026-10-20
 
