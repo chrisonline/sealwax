@@ -66,6 +66,14 @@ Use this page for decisions with meaningful long-term cost. Keep each entry shor
 - WebKit pages are memory-heavy: about 45 MiB of GPU memory per accelerated page plus a surface as tall as the whole body; the app plus WebKit's network process already take 274 MiB RSS before any message is shown. Reader and composer views therefore render with `hardware-acceleration-policy = NEVER` (no GPU memory, a 4× faster cold start, scrolling still at 144 Hz).
 - WebKit paces its own frames with a 60 Hz timer here; inside approach A the GTK side still scrolls at the monitor's rate.
 
+### ADR-002 amendment — GTK's default renderer stays; start-up a little over its bar (2026-10-21)
+
+**Status:** Accepted — the owner's answer on the sign-off sheet (D23, "Keep Vulkan"), 2026-10-21.
+
+The performance pass measured, live (TESTING.md "The performance pass, live"): with GTK's default renderer here (Vulkan), process start → first painted frame p50 ~402 ms warm, against the ≤ 400 ms bar (359 ms on 2026-10-05, before GTK 4.24.1 and NVIDIA 615), the window's UI memory 138.1 MiB without the driver's mappings; with GTK's GL renderer 353 ms but 182.6 MiB, over the 150 MB bar; scrolling the same with either. Sealwax sets no renderer: GTK's default stays, and 1.0's release notes say the warm start-up bar is missed by about 15 ms. A user can still choose with `GSK_RENDERER`.
+
+**Reason:** about 15 ms once at start can't be felt; ~45 MiB more is held all day, in background mode too.
+
 ## ADR-003 — Layering with an engine crate; tokio only there (2026-10-04)
 
 **Status:** Proposed.
@@ -446,6 +454,14 @@ Built on the user's "Restart a crashed sync" (2026-10-07). An account's actor, I
 
 Built on the user's "hide Microsoft's housekeeping folders and the mailspring folders altogether if they are not needed, the mailspring folders does not show up in any other mail client I use" (2026-10-09). The folder list leaves out, before roles are assigned (`imap::hidden`): **Outlook's sync logs**, a top-level "Sync Issues" or "Synkroniseringsfeil" and every folder under it, on any server (Outlook on Windows writes them to Exchange mailboxes); **Notes and Outbox** at the top of a mailbox on Microsoft's servers (an IMAP host ending in `office365.com` or `outlook.com`), Outlook's sticky notes and the mail Microsoft's own apps haven't sent yet, where elsewhere such a folder is the user's; **Mailspring's folder**, "Mailspring" at the top or under INBOX, and the folders under it, each while STATUS says it holds no message (or it is `\Noselect`): mail Mailspring snoozes there shows the folder again, and a folder whose count the server didn't give stays. Left out means never stored, synced, counted, searched or offered as a move target; a store that held them loses them at the next account pass, as when a folder leaves the server (the store's own copies only). Names are matched case-insensitively on the decoded name; only the names seen are in the table (the English ones and the Norwegian "Synkroniseringsfeil" from the user's Outlook.com account), and another language's name joins when seen. There is no setting to show them; the server still has them. Verified with unit tests and against the fake IMAP server on all three flavours (a store holding the folders loses them; a snoozed message brings Mailspring's back); not run against a real server.
 
+### ADR-006 amendment — a reply async-imap can't read no longer stops a folder (2026-10-22)
+
+Built on the user's "add the parse-error classification with the sync stage, and the fallback so one unreadable message can't block a folder" (2026-10-22), after [issue #20](https://github.com/PixDevsApps/sealwax/issues/20): a Zoho account logged in and then failed every pass within half a second with "i/o error (other error)", Thunderbird syncing the same account. async-imap 0.12 reports a reply imap-proto 0.17 can't parse as an `io::Error` of kind `Other` whose text quotes the reply, and the reply stays in its buffer, so the connection is done; Sealwax showed it as a network error and fetched the same reply again on every reconnect. imap-proto skips an attribute it can't parse when it is at most one level of parentheses deep, but not deeper, so a multipart BODYSTRUCTURE it rejects, or a nested list in FLAGS, fails the whole response.
+
+- **Told apart:** the raw layer reads such an error (by async-imap 0.12's texts "… during parsing of …" and "incoming data too large") as `ImapError::Unreadable(verb)`, "the server's reply to UID FETCH couldn't be read", naming the command's verb only, never its arguments or the reply; the greeting's is "the greeting". The actor logs it at warn as a reply that couldn't be read, not as a lost connection.
+- **A way past it:** each account keeps an `Unreadable` across its reconnects, shared by its command and IDLE connections. A header FETCH (first sync, new mail, the UID diff, older mail) that fails so takes its folder a step down: the next pass asks without BODYSTRUCTURE (the row then has no body kind and no attachment clip), the one after that one message per FETCH; the message that fails alone is left out, with a warn naming the folder's id and the UID, and a FETCH that gets through takes the folder back to the full one. So a message whose BODYSTRUCTURE can't be read costs one reconnect; one that can't be read at all costs three, and the rest of the folder and new mail arrive. Left-out messages count as held in the fast path, STATUS and the count check, and are forgotten when the server no longer has them; the list is in memory, so a restart tries them again. Nothing of the reply is kept or logged.
+- **Not covered:** a body download of a message too large to fetch whole still asks for its BODYSTRUCTURE and fails the same way; flag fetches, LIST and STATUS have no fallback (they name no single message). Issue #20's actual reply is not known; verified against the fake IMAP server on all three flavours with garbled BODYSTRUCTURE and FLAGS (the passes, a first sync, and the actor with IDLE), not on Zoho.
+
 ## ADR-007 — SMTP, MIME and privacy defaults (2026-10-04)
 
 **Status:** Proposed. S7 confirms the output in Gmail web, Outlook web and Thunderbird.
@@ -612,6 +628,12 @@ The owner's decision on the sign-off sheet (2026-10-19): packagers of other dist
 ### ADR-008 amendment — POP3 accounts sign in with a password in 1.0 (2026-10-19)
 
 The owner's decision on the sign-off sheet (2026-10-19), for M8: Sign in with Microsoft asks for IMAP's and SMTP's permissions only, and a POP3 account signs in with a password in 1.0. Microsoft accounts use IMAP.
+
+### ADR-008 amendment — publisher verification after 1.0 (2026-10-21)
+
+**Status:** Accepted — the owner's answer on the sign-off sheet (D20, "After 1.0"), 2026-10-21.
+
+Verifying the publisher of the Microsoft app registration (the 2026-10-19 amendment's second half) is the owner's paperwork after 1.0.0; 1.0's release notes keep the work-account limit, and the 60-second note and the user guide stay the answer until then. Nothing in the code depends on it.
 
 ## ADR-009 — Settings in files: config.toml, keys.toml, accounts.toml (2026-10-04)
 
@@ -1304,6 +1326,12 @@ Built in M2.
 
 `logging::init` installs a panic hook: a panic located outside Sealwax's own sources (a dependency's or the standard library's code) is reported on stderr by thread and place only, as its message may quote what was being parsed (imap-proto's names a character of the server's reply); Sealwax's own panics keep Rust's report. An actor's panic is logged with the account's id and a count.
 
+### ADR-018 amendment — autodetect's User-Agent is `Sealwax` (2026-10-21)
+
+**Status:** Accepted — the owner's answer on the sign-off sheet (D22, "Sealwax", 2026-10-21), then "Please start the work on whats signed off".
+
+Autodetect's requests (the domain's autoconfig, the ISPDB, the MX operator's autoconfig) say `User-Agent: Sealwax`, without a version, instead of development's placeholder `mail-dev (automated)`. Check for Updates already said `Sealwax`; the Microsoft sign-in's requests keep `Sealwax/<version>`. A version would help a server's admin but tells every domain asked which Sealwax the user runs. The test harnesses' own requests (the corpus fetch, the testbed's Mailpit) keep their generic one.
+
 ## ADR-019 — Corner radius follows Hyprland (2026-10-04)
 
 **Status:** Proposed; the DESIGN gate decides.
@@ -1419,6 +1447,16 @@ The same day, the AUR answered the owner's registration with "New account regist
 **Alternatives:** a check at startup or on a timer, opt-in or not (ADR-021's reasons against still hold, and the user asked for none); opening the releases page (the user asked not to); `github.com/…/releases/latest`'s redirect instead of the API (no rate limit, but it reads an HTML route's Location header, which GitHub may change); installing the update from Sealwax (it would need root through polkit, and a package downloaded and run by the app itself).
 
 **Consequences:** GitHub's API answers 60 requests an hour per address without an account; a network over that limit gets "Try again in an hour". The dialog's command assumes the package install of INSTALL.md (pacman); a build from source gets the same command, which replaces it with the release's package. The user guide's privacy table names GitHub, only on request; INSTALL.md's "Updates" points to the command.
+
+### ADR-021 amendment — what 1.0.0 needs (2026-10-21)
+
+**Status:** Accepted — the owner's answers on the sign-off sheet (D18 "When the P1 cards are done", D14 "Yes, use Docker for 1.0's install test", D16 "Keep the wax seal", D17 "A file in the package, made by our own script", 2026-10-21), then "Please start the work on whats signed off".
+
+**Decision:**
+- **1.0.0 goes out when the sign-off sheet's P1 cards are done.** P2 and P3 cards still open then go into the release notes' known limitations or the 1.x list. Each publishing step still waits for the owner's word.
+- **The clean-container install test** (ML-095) runs for 1.0.0 and its release candidates: `tools/install-test.sh` installs the package in a fresh `archlinux:base` container and runs the installed binary headless, with seccomp and Docker's masked `/proc` paths lifted for that container only, so WebKit's sandbox is tested rather than switched off (the alternatives in the M9 hardening report). Later releases ask again.
+- **The wax seal stays the icon;** the 16 and 24 px sizes smooth the rings and draw a bold @, as the seal's own turned to mush there (`tools/make-icons.py`).
+- **The crates' licenses ship in the package** as `/usr/share/licenses/sealwax/THIRD-PARTY-LICENSES.txt`, made by `tools/licenses.py` from the packaged `Cargo.lock` (the binary's dependencies as `cargo tree -p sealwax` resolves them for x86_64 Linux, normal and build) and attached to each GitHub release. No new tool to install; About Sealwax doesn't list them.
 
 ## ADR-022 — The headless checks run GTK's Broadway daemon with a patch of Sealwax's (2026-10-19)
 

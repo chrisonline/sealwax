@@ -2,7 +2,7 @@
 
 Synced: 2026-10-12
 
-This guide is for people who use Sealwax every day. It describes Sealwax 0.5.1, before 1.0. Where a command is in the keymap or the menus but does nothing yet, this guide says "not built yet". Every address and name in the examples is fictional.
+This guide is for people who use Sealwax every day. It describes Sealwax 1.0. Every address and name in the examples is fictional.
 
 - [Installing](#installing)
 - [First start and adding an account](#first-start-and-adding-an-account)
@@ -234,6 +234,8 @@ Move to… shows a subfolder by its own name with the folders above it beside it
 
 Rules sort new mail for you: move it to a folder, copy it, mark it read, star it, send it to Junk or bring it back from Junk. Each account has its own rules. Sealwax runs them itself, on the mail that arrives in the account's Inbox and Junk while Sealwax runs (background mode keeps it running with the window closed), so they work with every account, Outlook.com and POP3 accounts included. Rules see a message's headers (From, To, Subject, List-Id and the rest), not its text.
 
+**Mail that arrives in Junk** only meets the never-junk list: mail from a sender on it goes back to the Inbox, and nothing else happens to it. Your own rules and the always-junk list act on the mail that arrives in the Inbox, so no rule of yours (a Not junk action included) takes spam out of Junk. Applying the rules to Junk does the same: only never-junk senders' mail comes back.
+
 **The message menu.** Right-click a message (or press Menu or Shift+F10 on it) for **Reply**, **Reply All** and **Forward** (**Reply All**, **Reply to Sender** and **Forward** with `reply = "all"`); **Archive**, **Delete**, **Move to…** and **Move to Junk** (**Not Junk** in Junk); **Mark as Read** or **Unread** and **Star** or **Unstar**; and the rules' commands: **Create Rule from Message…**, **Always Junk Messages from** *the sender* and **Never Junk Messages from** *the sender*. A message you right-click that isn't selected is selected first; one in a selection acts with all the selected messages.
 
 **Always junk and never junk.** *Always Junk Messages from* puts the sender's address on the account's always-junk list and moves the messages to Junk at once; mail from that address goes to Junk from now on. *Never Junk Messages from* puts it on the never-junk list and brings the messages back from Junk to the Inbox; mail from that address that lands in Junk (your provider's spam filter put it there) comes back to the Inbox. The toast says what happened, and **Undo** (or `z`) takes back both the move and the list. An address on one list leaves the other.
@@ -268,7 +270,7 @@ The buttons at the right of its header **minimize** it to a bar at the bottom of
 
 Pasted text keeps simple formatting and loses the rest; **Paste as Plain Text** (Ctrl+Shift+V) pastes it without any. Spell checking works when `hunspell` and a hunspell dictionary for your language are installed (`sudo pacman -S hunspell hunspell-en_us`, for example); the languages come from your locale.
 
-**Reply, Reply All, Forward.** `r` (Ctrl+R), `a` (Ctrl+Shift+R) and `f` (Ctrl+L), or the three buttons on each expanded message's card. They answer the message you are on in the reader. Reply answers the sender; Reply All everyone the message went to, except you. A reply goes out from the address the message was sent to, when that is one of your identities. A message's header shows whom it went to besides you: "to me, Tomas Berg and 2 others".
+**Reply, Reply All, Forward.** `r` (Ctrl+R), `a` (Ctrl+Shift+R) and `f` (Ctrl+L), or the three buttons on each expanded message's card. They answer the message you are on in the reader. Reply answers the sender, or the message's Reply-To address when it has one (mailing lists and support desks often set one); replying to a message you sent answers the people you sent it to. Reply All answers the same, plus everyone else the message went to (its Cc stays Cc), except you. A reply goes out from the address the message was sent to, when that is one of your identities. A message's header shows whom it went to besides you: "to me, Tomas Berg and 2 others".
 
 **Reply All by default.** Set `reply = "all"` under `[reader]` in `config.toml` to have Reply (`r`, Ctrl+R, the first button on a card and the quick reply) answer everyone, as Reply All does; a message sent to you alone is answered as before. The card's second button is then **Reply to Sender**, which answers the sender alone; it is in the palette and the message menu too, without a key (`keys.toml` can give it one: `reply-sender`).
 
@@ -451,7 +453,7 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 
 **Reading from the list.** Scroll Message Down and Up (`d` and Shift+D) move the open message half a screen, from the list or the reader, so you can read on without leaving the list; `j` and `k` still move between messages. `l` opens the message, as Enter and `o` do.
 
-**Not built yet.** Toggle Sidebar (Ctrl+Shift+S, F9) is in the keymap, but its keys do nothing yet; the Keyboard Shortcuts dialog marks it "Not available yet".
+**Hiding the folders.** Toggle Sidebar (Ctrl+Shift+S or F9, or the main menu) hides the folder list, so the message list and the message get its room; the list's bar then has its own **New** button. Press it again to bring the folders back. Sealwax remembers it for the next window. In a narrow window, where one pane shows at a time, it goes to the folders and back to the list.
 
 **Moving with Tab.** Tab and Shift+Tab go through the window from left to right: the sidebar (the new-message button, the folder list, `config.toml`), the list's bar, the message list, the reader's toolbar and the conversation, then round again. The folder list and the message list are one stop each: Up and Down move inside them. In a message, Tab goes from link to link (in a plain-text message too: the link is selected, its address shows at the bottom of the reader, and Enter opens it), then on to the "…" that shows quoted text. An open composer comes after the reader in that order: From, Attach, Discard, Minimize, Expand, Close, To, and on to Send. In the composer, Tab in the message moves on to **Send** and Shift+Tab back to the toolbar, instead of typing a tab. A dialog keeps Tab inside it, and Escape closes it.
 
@@ -662,6 +664,7 @@ The folders follow `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG
 - **"Microsoft sign-in isn't available in this build of Sealwax yet."** Set a client ID ([above](#outlookcom-hotmail-and-microsoft-365-sign-in-with-microsoft)).
 - **"Still waiting for Microsoft."** The browser didn't come back from Microsoft's sign-in page. If it shows "Need admin approval", your organization must approve Sealwax first ([above](#work-or-school-microsoft-accounts)); otherwise finish signing in there, or **Open the sign-in page again**. Sealwax stops waiting after 5 minutes.
 - **"A message may have been sent"** See [Sending](#writing-mail).
+- **A message is in your webmail but not in Sealwax.** If the server's description of a message is one Sealwax can't read, Sealwax leaves that message out so the rest of the folder and new mail still arrive; the log says "a message's headers couldn't be read". Read that message in your webmail. Sealwax tries it again the next time it starts.
 - **Old mail is missing.** The first sync keeps the last 90 days of each folder; scroll to the end of the list to load older mail.
 - **Search misses a message** you know is there: in all folders, Trash and Junk are left out; a message whose text isn't downloaded is found by its headers and preview only. **Rebuild Search Index** (palette) indexes the stored mail again.
 - **Closing the window didn't quit Sealwax.** That is background mode: Ctrl+Q quits ([above](#notifications-and-background-mode)).

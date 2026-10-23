@@ -18,7 +18,7 @@ Run the same line again to update; **Check for Updates…** in Sealwax's main me
 
 ## Status
 
-**Version 0.5.1.** The features below are built and tested, and its author reads their own mail with it every day; 1.0 follows a longer period of daily use with real accounts. Testing so far is on local test mail servers (Dovecot, Stalwart, Mailpit), with Microsoft sign-in checked live on an Outlook.com account and the author's own accounts in daily use; other providers are welcome to report how it goes. The [1.0 release notes](docs/RELEASE_NOTES.md) are drafted.
+**Version 1.0.0.** The features below are built and tested, and its author has read their own mail with it every day since 7 October 2026: Outlook.com, Microsoft 365 and IMAP, Gmail among them. Testing also covers local test mail servers (Dovecot, Stalwart, Mailpit), a fresh install in a clean Arch Linux container, and measurements on a live desktop; other providers are welcome to report how it goes. The [1.0 release notes](docs/RELEASE_NOTES.md) say what was checked and what wasn't.
 
 ## Features
 
@@ -56,4 +56,4 @@ Omarchy, or Arch Linux, on x86_64, with GTK 4.18+, libadwaita 1.9+, WebKitGTK 6.
 
 Thanks to everyone who reports bugs and suggests improvements in the [issues](https://github.com/PixDevsApps/sealwax/issues), and especially to [@ocewers](https://github.com/ocewers) for detailed reports and ideas (issues #2 to #8).
 
-License: MIT.
+License: MIT. The licenses of the crates Sealwax is built from come with the package, in `/usr/share/licenses/sealwax/THIRD-PARTY-LICENSES.txt`.
