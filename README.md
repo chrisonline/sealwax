@@ -18,7 +18,7 @@ Run the same line again to update; **Check for Updates…** in Sealwax's main me
 
 ## Status
 
-**Version 1.0.0.** The features below are built and tested, and its author has read their own mail with it every day since 7 October 2026: Outlook.com, Microsoft 365 and IMAP, Gmail among them. Testing also covers local test mail servers (Dovecot, Stalwart, Mailpit), a fresh install in a clean Arch Linux container, and measurements on a live desktop; other providers are welcome to report how it goes. The [1.0 release notes](docs/RELEASE_NOTES.md) say what was checked and what wasn't.
+**Version 1.0.6.** The features below are built and tested, and its author has read their own mail with it every day since 7 October 2026: Outlook.com, Microsoft 365 and IMAP, Gmail among them. Testing also covers local test mail servers (Dovecot, Stalwart, Mailpit), a fresh install in a clean Arch Linux container, and measurements on a live desktop; other providers are welcome to report how it goes. The [1.0 release notes](docs/RELEASE_NOTES.md) say what was checked and what wasn't.
 
 ## Features
 
@@ -46,7 +46,7 @@ Omarchy, or Arch Linux, on x86_64, with GTK 4.18+, libadwaita 1.9+, WebKitGTK 6.
 - [Install](INSTALL.md): installing, updating and uninstalling, in plain words; building from source
 - [What's new](CHANGELOG.md): each release
 - [Release notes for 1.0.0](docs/RELEASE_NOTES.md) (a draft until the sign-off)
-- [Security](docs/SECURITY.md): the threat model, the rules and the known limitations
+- [Security](docs/SECURITY.md): the threat model, the rules and the known limitations; to report a vulnerability, see the [security policy](SECURITY.md)
 - [Integrations](docs/INTEGRATIONS.md): Omarchy, Hyprland key bindings and menu entries, providers
 - [Microsoft sign-in setup](docs/OAUTH-SETUP.md): registering a client ID
 - [Building](docs/BUILD.md) and [testing](docs/TESTING.md)

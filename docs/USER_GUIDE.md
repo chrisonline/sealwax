@@ -133,7 +133,7 @@ What a POP3 account does:
 - **On the server.** By default, downloaded mail stays on the server and Sealwax never deletes it there. To change that, edit the account's `[account.pop3]` table in `accounts.toml`: `delete_after_days = 30` deletes a message there 30 days after it was downloaded (1 to 3650 days), and `leave_on_server = false` deletes each message there as soon as it is downloaded.
 - **Checking.** Sealwax checks a POP3 server when it starts, every 5 minutes, after a reconnect and when you press Refresh (F5 or Ctrl+Alt+R). It downloads the newest mail first. The first download of an account sends no notifications.
 - **Read and unread** are kept by Sealwax on this computer: POP3 can't tell the server.
-- **A message over 100 MiB** isn't downloaded: it stays on the server and its row shows only its header.
+- **A message over 100 MiB** isn't downloaded: it stays on the server and its row shows only its header. So does one that turns out more than twice as large as the server said.
 - **Copies of your sent mail and your drafts** are kept in the local folders, not on the server.
 - **The server must support UIDL.** Without it the assistant says "This POP3 server can't keep track of messages": use IMAP if the provider offers it. "The mailbox is busy" means another mail app is downloading from the same mailbox, or the server wants a pause between sign-ins.
 - **Removing a POP3 account** deletes its local folders for good, with its sent mail, its drafts and any mail the server no longer has.
@@ -168,7 +168,7 @@ The layout follows the window's width, so it works tiled:
 
 On Hyprland the window has no title bar; on other desktops the window controls sit at the ends of the pane bars.
 
-**Account status.** Each account's heading has its name (the account name you gave it, else its address), a dot and a word: synced, syncing…, offline, mailbox full, needs sign-in or bad certificate. An account with a colour shows its name and its synced dot in that colour; a dot that warns stays the warning's colour. A state that needs you shows as a **banner** across the top of the window, the most important first: no keyring, a certificate that no longer verifies, a sign-in or password needed, a message that may have been sent, a full mailbox, offline. Short results (archived, sent, saved) show as **toasts** at the bottom.
+**Account status.** Each account's heading has its name (the account name you gave it, else its address), a dot and a word: synced, syncing…, offline, sending off, mailbox full, needs sign-in, needs adding again or bad certificate. An account with a colour shows its name and its synced dot in that colour; a dot that warns stays the warning's colour. A state that needs you shows as a **banner** across the top of the window, the most important first: no keyring, a certificate that no longer verifies, a sign-in or password needed, an account to add again, sending turned off, a message that may have been sent, a full mailbox, offline. Short results (archived, sent, saved) show as **toasts** at the bottom.
 
 **What syncs.** Sealwax keeps a copy of your mail on this computer, so the list shows at once and works offline. New mail in the Inbox arrives as soon as the server reports it (IMAP IDLE); the account's other folders are checked every couple of minutes, and **Refresh** (F5, Ctrl+Alt+R or the main menu) checks every account now. A folder's first sync keeps its last 90 days of mail (at least 200 messages, at most 5,000); scroll to the end of the list to load older messages, 200 at a time ("Loading older messages…"). Inbox, Sent, Drafts, Archive, Junk and Trash sync by themselves; another folder syncs once you have opened it. The unread counts are the server's, including mail older than what the list holds.
 
@@ -634,7 +634,7 @@ Sealwax writes a plain-text log of what it does, never with message content, add
   systemctl --user unset-environment RUST_LOG
   ```
   This route is not tried yet. The protocol libraries stay at warnings whatever `RUST_LOG` says, so a debug log carries no protocol traces.
-- **A development build** runs in the terminal and logs there ([INSTALL.md](../INSTALL.md#for-developers-build-from-source), which says how to keep it away from your real mail).
+- **A development build** runs in the terminal and logs there, and keeps its own folders (`sealwax-devel` in place of `sealwax`), away from your real mail ([INSTALL.md](../INSTALL.md#for-developers-build-from-source)).
 
 ### Where Sealwax keeps things
 
@@ -663,6 +663,8 @@ The folders follow `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG
 - **"…'s mailbox is full"** The server has no room: new mail may bounce and changes can't be saved there. Delete mail you don't need, or ask your provider for more space.
 - **"Microsoft sign-in isn't available in this build of Sealwax yet."** Set a client ID ([above](#outlookcom-hotmail-and-microsoft-365-sign-in-with-microsoft)).
 - **"Still waiting for Microsoft."** The browser didn't come back from Microsoft's sign-in page. If it shows "Need admin approval", your organization must approve Sealwax first ([above](#work-or-school-microsoft-accounts)); otherwise finish signing in there, or **Open the sign-in page again**. Sealwax stops waiting after 5 minutes.
+- **"Sending is turned off for this account"** Microsoft 365 turned off SMTP AUTH, the way mail apps send, for your mailbox or your whole organization; Microsoft does this by default for many organizations. Sealwax can't add an account it can't send from. Ask your IT admin to turn on SMTP AUTH (Microsoft calls it "Authenticated SMTP") for your mailbox, then sign in again. If it is turned off after you added the account, the account says "sending off" and a banner says "Sending is turned off for" the account: your messages wait in the outbox, and Sealwax sends them once the admin turns it on.
+- **"<account> must be added again"** or **"This account's server isn't Microsoft's"** A Microsoft account added with Sealwax 1.0.2 or earlier can have a server saved that isn't one of Microsoft's, and Sealwax gives your Microsoft sign-in only to Microsoft's servers, so the account doesn't connect. Remove it (Remove Account) and add it again: Sealwax then uses the servers your sign-in is checked on.
 - **"A message may have been sent"** See [Sending](#writing-mail).
 - **A message is in your webmail but not in Sealwax.** If the server's description of a message is one Sealwax can't read, Sealwax leaves that message out so the rest of the folder and new mail still arrive; the log says "a message's headers couldn't be read". Read that message in your webmail. Sealwax tries it again the next time it starts.
 - **Old mail is missing.** The first sync keeps the last 90 days of each folder; scroll to the end of the list to load older mail.

@@ -10,6 +10,43 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **HTML signatures:** a signature can now be a designed HTML file, with your logo, colours, fonts and links, per account and per sender address ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)). Name it with `signature_html = "signatures/work/signature.html"` in `accounts.toml` and put its images beside it: they go inside the message, so recipients see the logo without loading anything from the web. If the file can't be used, the composer says why and your plain signature stands in.
 - **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
 
+## 1.0.6 — 2026-10-27
+
+A security update. Please update.
+
+- **A mail server can't fill Sealwax's memory with an answer that never ends:** when Sealwax asked an incoming mail server something, it read the answer until the server said it was done, however long that took, and kept what it was told. A server could keep answering one question until memory ran short. Sealwax now stops far above any honest answer, at two million responses or 256 MiB (1 GiB when downloading messages), drops the connection and connects again a little later ([GHSA-f9g6-hwxr-7v96](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-f9g6-hwxr-7v96)).
+- **A mail server can't make Sealwax set aside memory for data it never sends:** a server says how long a message is before sending it, and Sealwax set aside that much memory at once, up to 512 MiB, on the server's word alone. On port 143, anyone on the network could also say it in the server's place before the connection is encrypted. Now Sealwax takes memory as the message arrives ([GHSA-f9g6-hwxr-7v96](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-f9g6-hwxr-7v96)).
+- **POP3 accounts hold the server to its word:** a message may now be at most about twice the size the server gave for it, and the list of messages at most 128 MiB, and it must keep coming. A server that sends a line now and then can't keep Sealwax waiting any more; Sealwax gives up and tries again later.
+
+## 1.0.5 — 2026-10-26
+
+- **No more waiting on an address that doesn't answer:** a mail server's name often leads to several addresses, usually an IPv6 one first. When the network dropped everything sent to that first address, as a broken IPv6 route does, Sealwax waited on it until its time to connect ran out and said the server didn't answer in time, without trying the others. Sealwax now starts on the next address after a quarter of a second while the first goes on trying, and uses whichever answers first, for incoming and outgoing mail alike.
+- **Large messages open even when the server describes them oddly:** Sealwax downloads a message over 10 MB without its attachments, which needs the server's description of how the message is put together. When Sealwax couldn't read that description, the message didn't open, and neither did the other large messages asked for with it. Now such a message is downloaded whole instead, after a moment's reconnect, and the others open as usual.
+- **Sending turned off says so:** when a Microsoft 365 admin turns off SMTP AUTH, the way mail apps send, after you added the account, Sealwax used to keep trying to send without telling you why nothing went. Now the account says "sending off" and a banner says "Sending is turned off" for it and that your organization's admin can turn it on. Your messages wait in the outbox and go once it is on again ([issue #21](https://github.com/PixDevsApps/sealwax/issues/21)'s follow-up).
+- **A clear word for a Microsoft account to add again:** since 1.0.3, Sealwax gives a Microsoft sign-in only to Microsoft's servers. A Microsoft account added earlier with another server saved for it then showed as offline, or quietly didn't send. Now it says "needs adding again", and a banner says to remove the account and add it again.
+- **For people who build Sealwax themselves:** a development build (`cargo run`) now keeps its own folders, `sealwax-devel` beside the installed Sealwax's `sealwax`, so it never opens your real mail or accounts ([INSTALL.md](INSTALL.md#for-developers-build-from-source)).
+
+## 1.0.4 — 2026-10-25
+
+A security update. Please update.
+
+- **A mail server can't make Sealwax quit any more:** when Sealwax fetches new mail, the server describes how each message's parts are nested inside one another. A description nested a few hundred levels deep, under a kilobyte, made Sealwax run out of room and quit at once, and again at each start while the server kept sending it. Anyone on the network could also send one in place of the server's first line on port 143, before the connection is encrypted. Sealwax now stops at 20 levels: such a message shows without its attachment clip. The fix is imap-proto's own, the library Sealwax reads IMAP with, applied to Sealwax's copy until an imap-proto release has it ([GHSA-wv8g-4592-g5r2](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-wv8g-4592-g5r2)).
+
+## 1.0.3 — 2026-10-24
+
+A security update. Please update.
+
+- **Microsoft sign-in stays with Microsoft:** when you added a Microsoft 365 account on your own domain, Sealwax could save an outgoing mail server that only an unchecked DNS answer named. The first message you sent then gave that server your account's access token, which lets its holder read and send your mail until it expires, usually within about an hour. Your password and the long-lived sign-in were never sent. Sealwax now sends a Microsoft token only to Microsoft's own servers, and a new Microsoft account always uses the servers its sign-in was checked on. If sending from a Microsoft account stops with an error after this update, remove the account and add it again. Reported privately by FieldsFury Labs ([GHSA-vhrm-52f2-v9v3](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-vhrm-52f2-v9v3)).
+- **A hostile mail server can't tie up Sealwax any more:** an outgoing mail server, or anyone on the network before the connection is encrypted on port 587, could make Sealwax fill its memory with a reply line that never ends, or keep a processor busy for seconds with a reply of many short lines. Sealwax now stops reading a reply line at 16 KiB and reads each reply once. The never-ending line was reported privately by FieldsFury Labs ([GHSA-chx5-p5h3-52m5](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-chx5-p5h3-52m5)); the fix is in Sealwax's copy of lettre, the library it sends mail with, and has been reported to lettre.
+
+## 1.0.2 — 2026-10-24
+
+- **Links open exactly as written:** a link in a message used to reach the browser slightly rewritten, with its encoded characters undone. Most links didn't mind, but a link that carries another link inside it, as sign-in links from a click tracker do, broke and failed to sign in, while the same link pasted into a browser worked ([issue #22](https://github.com/PixDevsApps/sealwax/issues/22)). Sealwax now hands the browser the link unchanged.
+
+## 1.0.1 — 2026-10-23
+
+- **A clear word when Microsoft 365 won't let mail apps send:** many Microsoft 365 organizations have SMTP AUTH, the way mail apps send mail, turned off, for everyone or for some mailboxes. Adding such an account used to end in "The sign-in didn't work" after a sign-in that had worked ([issue #21](https://github.com/PixDevsApps/sealwax/issues/21)). The setup assistant now says "Sending is turned off for this account" and that your organization's admin can turn SMTP AUTH on for your mailbox; then sign in again. The user guide's "Common problems" says the same.
+
 ## 1.0.0 — 2026-10-22
 
 Sealwax 1.0: everything in 0.5.1, checked in daily use with real accounts, in a fresh install and on a live desktop ([the 1.0 release notes](docs/RELEASE_NOTES.md)), and these changes:

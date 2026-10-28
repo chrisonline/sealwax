@@ -21,6 +21,8 @@
 //! subscriptions, LIST patterns with `*` and `%`, and a hierarchy delimiter of choice.
 //! For replies async-imap can't parse (issue #20): a message whose header FETCH response has a
 //! garbled BODYSTRUCTURE or garbled FLAGS ([`Garble`]); BODYSTRUCTURE only when asked for.
+//! For a reply that never comes whole: a command answered with text of the test's choosing,
+//! then the connection cut ([`World::cut_with`]).
 //! Synthetic data only.
 
 #![allow(dead_code)]
@@ -156,6 +158,9 @@ pub struct World {
 pub enum Garble {
     /// A multipart BODYSTRUCTURE with a number where a part's subtype belongs.
     Structure,
+    /// A BODYSTRUCTURE of multiparts nested 10,000 deep: past imap-proto's limit, and without
+    /// it, past a 2 MiB stack.
+    Deep,
     /// A parenthesized list inside FLAGS, whatever else is asked for.
     Flags,
 }
@@ -186,6 +191,8 @@ enum Fault {
     LoseReply,
     /// It runs, and the server never answers on that connection again.
     Hold,
+    /// Answered with this text alone, and the connection is cut.
+    CutWith(String),
 }
 
 pub const NOW: i64 = 1_791_158_400;
@@ -279,6 +286,13 @@ impl World {
     /// The next command containing `needle` runs, and its connection goes silent for good.
     pub fn hold(&mut self, needle: &str) {
         self.faults.push((needle.to_owned(), Fault::Hold));
+    }
+
+    /// The next command containing `needle` is answered with `text` alone, which needn't be a
+    /// whole reply, and the connection is cut after it.
+    pub fn cut_with(&mut self, needle: &str, text: &str) {
+        self.faults
+            .push((needle.to_owned(), Fault::CutWith(text.to_owned())));
     }
 
     fn fault(&mut self, command: &str) -> Option<Fault> {
@@ -1359,6 +1373,11 @@ fn uid_command(
                 (true, Some(Garble::Structure)) => "BODYSTRUCTURE ((\"text\" 7 1)\
                      (\"text\" \"html\" NIL NIL NIL \"7bit\" 1 1) \"alternative\") "
                     .to_owned(),
+                (true, Some(Garble::Deep)) => format!(
+                    "BODYSTRUCTURE {}(\"text\" \"plain\" NIL NIL NIL \"7bit\" 1 1){} ",
+                    "(".repeat(10_000),
+                    " \"mixed\")".repeat(10_000)
+                ),
                 (true, _) => format!(
                     "BODYSTRUCTURE (\"text\" \"plain\" (\"charset\" \"utf-8\") NIL NIL \"7bit\" {} 1) ",
                     TEXT.len()
@@ -1755,6 +1774,10 @@ async fn session(mut io: BufReader<Box<dyn Io>>, world: Arc<Mutex<World>>, epoch
                     answer(&mut world, &mut state, tag, command);
                     world.cuts += 1;
                     Reply::Silent
+                }
+                Some(Fault::CutWith(text)) => {
+                    world.cuts += 1;
+                    Reply::Cut(text)
                 }
                 None => answer(&mut world, &mut state, tag, command),
             }
