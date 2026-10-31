@@ -93,7 +93,7 @@ impl Registry {
 
 /// The partial index each filter reads, and the condition that selects it. Every index leaves
 /// out rows hidden by a pending move or expunge (256) and rows flagged `\Deleted` (8).
-fn filter_sql(filter: ViewFilter) -> (&'static str, &'static str) {
+pub(crate) fn filter_sql(filter: ViewFilter) -> (&'static str, &'static str) {
     match filter {
         ViewFilter::All => ("messages_folder_date", " AND flags & 264 = 0"),
         ViewFilter::Unread => ("messages_unread", " AND flags & 265 = 0"),
@@ -247,7 +247,7 @@ pub(crate) use label_folder;
 /// a copy of it (its Message-ID) the list would show, apart by U+001F.
 pub(crate) const SUMMARY_COLUMNS: &str = concat!(
     "m.id, m.folder_id, m.thread_id, m.from_name, m.from_addr, m.subject, m.snippet, m.date, \
-     m.flags, m.has_attachments, t.message_count, \
+     m.flags, m.has_attachments, t.message_count, m.list_unsubscribe IS NOT NULL, \
      (SELECT group_concat(substr(lf.name, 8), char(31)) FROM messages lm \
        JOIN folders lf ON lf.id = lm.folder_id \
       WHERE m.message_id <> '' AND lm.message_id = m.message_id AND lm.flags & 264 = 0 \
@@ -281,7 +281,8 @@ pub(crate) fn summary_row(row: &Row<'_>) -> rusqlite::Result<MessageSummary> {
         flags: sealwax_domain::model::Flags::from_bits(row.get::<_, u32>(8)?),
         has_attachments: row.get(9)?,
         thread_count: row.get(10)?,
-        labels: labels(row.get(11)?),
+        subscription: row.get(11)?,
+        labels: labels(row.get(12)?),
     })
 }
 
@@ -420,6 +421,11 @@ pub(crate) fn search(
         (query.unread, "m.flags & 1 = 0", "m.flags & 1 <> 0"),
         (query.starred, "m.flags & 4 <> 0", "m.flags & 4 = 0"),
         (
+            query.subscription,
+            "m.list_unsubscribe IS NOT NULL",
+            "m.list_unsubscribe IS NULL",
+        ),
+        (
             query.has_attachment,
             "m.has_attachments <> 0",
             "m.has_attachments = 0",
@@ -431,6 +437,14 @@ pub(crate) fn search(
         }
     }
     let mut values = vec![(":limit", Value::Integer(i64::from(limit)))];
+    if let Some(sender) = &query.sender {
+        conditions.push_str(" AND lower(m.from_addr) = :sender");
+        values.push((":sender", Value::Text(sender.clone())));
+    }
+    if let Some(domain) = &query.domain {
+        conditions.push_str(" AND m.from_domain = :domain");
+        values.push((":domain", Value::Text(domain.clone())));
+    }
     if let Some(after) = after {
         conditions.push_str(" AND m.date >= :after");
         values.push((":after", Value::Integer(after)));

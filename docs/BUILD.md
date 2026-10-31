@@ -44,6 +44,8 @@ cargo run -p sealwax -- --version
 | `email-spike-s1` … `email-spike-s7` | `spikes/<id>-<topic>/` | M0 measurement code, one crate per spike (workspace glob `spikes/*`) |
 | `sealwax-fuzz` | `fuzz/` | libFuzzer targets (M9, ML-093); a workspace of its own, excluded from this one, built by `tools/fuzz.sh` |
 | `lettre` (patched) | `vendor/lettre/` | lettre 0.11.23 with a 16 KiB reply-line limit, used through `[patch.crates-io]` here and in `fuzz/`; excluded from the workspace ([vendor/README.md](../vendor/README.md), ADR-015 amendment of 2026-10-13) |
+| `imap-proto` (patched) | `vendor/imap-proto/` | imap-proto 0.17.0 with upstream's nesting limit for BODYSTRUCTURE and body extensions, used through `[patch.crates-io]` here and in `fuzz/`; excluded from the workspace ([vendor/README.md](../vendor/README.md), ADR-006 amendment of 2026-10-25) |
+| `async-imap` (patched) | `vendor/async-imap/` | async-imap 0.12.0 whose buffer grows with a literal's data instead of to its announced size at once and whose IDLE can be refused without a panic, used through `[patch.crates-io]` here and in `fuzz/`; excluded from the workspace ([vendor/README.md](../vendor/README.md), ADR-006 amendments of 2026-10-27) |
 
 Release profile: thin LTO, one codegen unit. The M0 spike crates keep their `email-spike-*` names (ADR-010).
 
@@ -155,7 +157,9 @@ SEALWAX_TESTBED_CA=$PWD/tools/testbed/certs/ca.pem SEALWAX_SOAK_MINUTES=1440 SEA
 
 ## Accounts in development builds
 
-Development builds (`cfg!(debug_assertions)`) read two overrides that release builds ignore ([SECURITY.md](SECURITY.md#credentials)):
+Development builds (`cfg!(debug_assertions)`, the `.Devel` app-id) keep their own folders, `sealwax-devel` in each XDG base directory where the installed Sealwax has `sealwax` (since 2026-10-26, [ADR-010 amendment](DECISIONS.md#adr-010-amendment--development-builds-keep-their-own-folders-2026-10-26)), so they start with no accounts and never open the installed app's store. The engine's live examples (`send_live`, `oauth_live`) still read the installed Sealwax's `config.toml`.
+
+They read two overrides that release builds ignore ([SECURITY.md](SECURITY.md#credentials)):
 
 - `SEALWAX_TEST_CA=<file>` trusts exactly that CA instead of the system's (the testbed's `tools/testbed/certs/ca.pem`);
 - `SEALWAX_SECRETS=memory` keeps passwords and tokens out of the keyring.

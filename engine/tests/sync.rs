@@ -752,8 +752,9 @@ fn last_header_fetch(fake: &Fake) -> String {
         .unwrap()
 }
 
-#[test]
-fn a_body_structure_that_cant_be_read_costs_one_reconnect() {
+/// A message whose BODYSTRUCTURE is `garble` costs one reconnect: the next pass asks without
+/// BODYSTRUCTURE, every message arrives, and a new message gets the full FETCH again.
+fn an_unreadable_structure_costs_one_reconnect(garble: Garble) {
     runtime().block_on(async {
         for flavor in Flavor::ALL {
             let fake = Fake::start(flavor).await;
@@ -767,9 +768,7 @@ fn a_body_structure_that_cant_be_read_costs_one_reconnect() {
                 world.append("INBOX", 0, &[]);
                 let uid = world.append("INBOX", 0, &["\\Seen"]);
                 world.append("INBOX", 0, &[]);
-                world
-                    .garbled
-                    .insert(("INBOX".into(), uid), Garble::Structure);
+                world.garbled.insert(("INBOX".into(), uid), garble);
             }
             unreadable_pass(&fake, &store, account, &options).await;
             let mut conn = fake.connect().await;
@@ -795,6 +794,16 @@ fn a_body_structure_that_cant_be_read_costs_one_reconnect() {
             store.close().unwrap();
         }
     });
+}
+
+#[test]
+fn a_body_structure_that_cant_be_read_costs_one_reconnect() {
+    an_unreadable_structure_costs_one_reconnect(Garble::Structure);
+}
+
+#[test]
+fn a_body_structure_nested_too_deep_costs_one_reconnect() {
+    an_unreadable_structure_costs_one_reconnect(Garble::Deep);
 }
 
 #[test]
@@ -1135,4 +1144,92 @@ fn the_comparison_catches_a_corrupted_cache() {
         assert!(found[0].contains("uid 4 server") && found[1].contains("uid 8 missing"));
         store.close().unwrap();
     });
+}
+
+#[test]
+fn mail_stored_before_v13_gets_its_list_unsubscribe_once() {
+    runtime().block_on(async {
+        for flavor in Flavor::ALL {
+            let fake = Fake::start(flavor).await;
+            seed(&fake);
+            fake.world().append_extra(
+                "INBOX",
+                "List-Unsubscribe: <mailto:ut@butikk.example>, <https://butikk.example/u/1>\r\n\
+                 List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n",
+            );
+            let (dir, store, account) = store();
+            let mut conn = fake.connect().await;
+            account_pass(&mut conn, &store, account, &options()).await;
+            let found = |store: &Store| {
+                store
+                    .search("is:subscription", None, 10)
+                    .recv_blocking()
+                    .unwrap()
+                    .value
+                    .len()
+            };
+            assert_eq!(found(&store), 1, "{flavor:?}: the header FETCH asks for it");
+            // What a store migrated to v13 holds: the rows without it, the folders marked.
+            let db = rusqlite::Connection::open(dir.path().join("store.sqlite")).unwrap();
+            db.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
+            db.execute_batch(
+                "UPDATE messages SET list_unsubscribe = NULL, one_click = 0;
+                 UPDATE folders SET unsubscribe_backfill = 1;",
+            )
+            .unwrap();
+            assert_eq!(found(&store), 0);
+            let inbox = folder(&store, account, "INBOX").await;
+            assert!(state(&store, inbox).await.unsubscribe_backfill);
+            account_pass(&mut conn, &store, account, &options()).await;
+            assert_eq!(found(&store), 1, "{flavor:?}: backfilled");
+            // A folder the policy doesn't sync gets it when it is opened.
+            assert_eq!(marked(&store, account).await, ["Arkiv2"], "{flavor:?}");
+            let archive = folder(&store, account, "Arkiv2").await;
+            sync_folder(
+                &mut conn,
+                &store,
+                archive,
+                &options(),
+                &FolderLocks::default(),
+                |_| {},
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                marked(&store, account).await,
+                Vec::<String>::new(),
+                "{flavor:?}"
+            );
+            let one_click: bool = db
+                .query_row(
+                    "SELECT one_click FROM messages WHERE list_unsubscribe IS NOT NULL",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(one_click);
+            if flavor != Flavor::Rev1 {
+                let report = account_pass(&mut conn, &store, account, &options()).await;
+                assert_eq!(
+                    report.stats.passes, 0,
+                    "{flavor:?}: STATUS skips them again"
+                );
+            }
+            drop(db);
+            store.close().unwrap();
+        }
+    });
+}
+
+/// The folders still marked for the List-Unsubscribe backfill.
+async fn marked(store: &Store, account: AccountId) -> Vec<String> {
+    store
+        .account_folders(account)
+        .recv()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|state| state.unsubscribe_backfill)
+        .map(|state| state.name_raw)
+        .collect()
 }

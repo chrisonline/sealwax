@@ -47,6 +47,7 @@ use sealwax_domain::keymap::Keymap;
 use sealwax_domain::layout::Layout;
 use sealwax_domain::mailto::{self, Mailto};
 use sealwax_domain::model::{AccountId, FolderId, FolderRole, MessageId};
+use sealwax_domain::senders::GroupBy;
 use sealwax_domain::triage::Triage;
 use sealwax_engine::api::{Command, Event};
 use sealwax_engine::service::Engine;
@@ -106,7 +107,7 @@ impl AppConfig {
     pub fn from_env(exit_after: Option<Duration>) -> Self {
         Self {
             app_id: app_id_from_env(),
-            dirs: SealwaxDirs::from_env(),
+            dirs: SealwaxDirs::named(config::DIR_NAME),
             exit_after,
             tiling: window::tiling_desktop(),
             engine: Some(EngineOptions::from_env()),
@@ -1205,6 +1206,23 @@ impl AppState {
         crate::go_to::install(self, &win_actions);
         crate::folders::install(self, window, &win_actions);
         crate::rules::install_window(self, window, &win_actions);
+        crate::unsubscribe::install_window(self, &win_actions);
+        for (id, by) in [
+            (ActionId::GroupBySender, GroupBy::Sender),
+            (ActionId::GroupByDomain, GroupBy::Domain),
+            (ActionId::DontGroup, GroupBy::None),
+        ] {
+            let weak = Rc::downgrade(self);
+            win_actions.connect(id, move || {
+                if let Some(state) = weak.upgrade()
+                    && let Some(list) = state.list()
+                {
+                    list.set_group_by(by);
+                    state.change_layout(|layout| layout.group_by = by);
+                    state.refresh_commands();
+                }
+            });
+        }
         self.win_actions.replace(Some(win_actions));
     }
 
@@ -1261,6 +1279,15 @@ impl AppState {
         let weak = Rc::downgrade(self);
         list.connect_selection_cleared(move || {
             if let Some(state) = weak.upgrade() {
+                // The messages' selection goes when the list turns to its groups; a group
+                // selected there keeps its page and its commands.
+                if state
+                    .list()
+                    .is_some_and(|list| list.selected_group().is_some())
+                {
+                    state.refresh_commands();
+                    return;
+                }
                 state.leave_opened(None);
                 state.set_has_selection(false);
                 if let Some(shown) = state.window()
@@ -1287,6 +1314,30 @@ impl AppState {
                 state.set_has_selection(true);
                 state.refresh_commands();
             }
+        });
+        let weak = Rc::downgrade(self);
+        list.connect_group_selected(move |group| {
+            let Some(state) = weak.upgrade() else {
+                return;
+            };
+            if group.is_some() {
+                state.leave_opened(None);
+                if state.reader_shows.take().is_some()
+                    && let Some(reader) = state.reader()
+                {
+                    reader.clear();
+                    reader.set_position(None);
+                }
+            }
+            if let Some(shown) = state.window() {
+                match group {
+                    Some(group) => shown.show_group(&group.name, group.count, group.unread),
+                    None if shown.reader_page() == "batch" => shown.clear_reader(),
+                    None => {}
+                }
+            }
+            state.set_has_selection(group.is_some());
+            state.refresh_commands();
         });
         let weak = Rc::downgrade(self);
         list.connect_search_changed(move |search| {
@@ -1563,6 +1614,10 @@ impl AppState {
         let Some(list) = self.list() else {
             return;
         };
+        if list.selected_group().is_some() {
+            self.group_command(id);
+            return;
+        }
         if id == ActionId::MoveTo {
             self.open_move_to(&list);
             return;
@@ -1591,6 +1646,30 @@ impl AppState {
         }
     }
 
+    /// A mail command on the selected group (issue #25): all of its mail in the view, read
+    /// again from the store, the selection then on the next group.
+    pub(crate) fn group_command(self: &Rc<Self>, id: ActionId) {
+        let Some(list) = self.list() else {
+            return;
+        };
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let targets = list.fresh_group_targets().await;
+            let Some(state) = weak.upgrade() else {
+                return;
+            };
+            match targets {
+                Some(targets) if targets.is_empty() => {}
+                Some(targets) if id == ActionId::MoveTo => state.pick_folder(targets),
+                Some(targets) => state.triage_targets(id, targets),
+                None => state.show_notice(
+                    &Notice::plain("The sender's mail didn't load; nothing changed".to_owned()),
+                    true,
+                ),
+            }
+        });
+    }
+
     fn triage_targets(&self, id: ActionId, targets: Vec<Target>) {
         let (Some(triage), Some(list)) = (self.triage(), self.list()) else {
             return;
@@ -1610,14 +1689,19 @@ impl AppState {
                 .1
                 .retain(|pending| targets.iter().all(|target| target.id != pending.id));
         }
-        let ids: Vec<MessageId> = targets.iter().map(|target| target.id).collect();
-        list.advance_after(&ids);
+        advance(&list, &targets);
         triage.queue(action, targets, Origin::User);
     }
 
     /// Move to…: the picker over the account's folders; insensitive across accounts.
     fn open_move_to(self: &Rc<Self>, list: &MessageList) {
-        let (Some(window), Ok(targets)) = (self.window(), list.selected_targets()) else {
+        if let Ok(targets) = list.selected_targets() {
+            self.pick_folder(targets);
+        }
+    }
+
+    fn pick_folder(self: &Rc<Self>, targets: Vec<Target>) {
+        let Some(window) = self.window() else {
             return;
         };
         let folders = self.mailbox.folders();
@@ -1641,8 +1725,7 @@ impl AppState {
             return;
         };
         self.mark_started();
-        let ids: Vec<MessageId> = targets.iter().map(|target| target.id).collect();
-        list.advance_after(&ids);
+        advance(&list, &targets);
         triage.queue(Triage::MoveTo(folder), targets, Origin::User);
     }
 
@@ -1761,6 +1844,14 @@ impl AppState {
         compose_actions::refresh(actions, &list, &targets, &folders);
         crate::folders::refresh(self, actions);
         crate::rules::refresh(self, actions);
+        actions.set_applies(
+            ActionId::Unsubscribe,
+            crate::unsubscribe::applies(self).is_ok(),
+        );
+        let group_by = list.group_by();
+        actions.set_applies(ActionId::GroupBySender, group_by != GroupBy::Sender);
+        actions.set_applies(ActionId::GroupByDomain, group_by != GroupBy::Domain);
+        actions.set_applies(ActionId::DontGroup, group_by != GroupBy::None);
     }
 
     /// Shows `notice` as a toast; with `replaces`, it takes the last action's toast's place
@@ -1973,6 +2064,9 @@ impl AppState {
             );
             window.set_sidebar_hidden(layout.sidebar_hidden);
         }
+        if let Some(list) = self.list() {
+            list.set_group_by(layout.group_by);
+        }
         self.layout.replace(Some(layout));
     }
 
@@ -2029,6 +2123,12 @@ impl AppState {
                 layout.list_width.map_or(window::LIST_WIDTH, f64::from),
             );
             window.set_sidebar_hidden(layout.sidebar_hidden);
+        }
+        if let (Some(list), Some(by)) = (
+            self.list(),
+            self.layout.borrow().as_ref().map(|layout| layout.group_by),
+        ) {
+            list.set_group_by(by);
         }
         let weak = Rc::downgrade(self);
         window.connect_pane_widths(move |sidebar, list| {
@@ -2443,6 +2543,7 @@ impl AppState {
             crate::reader::commands::connect(actions, &reader);
         }
         compose_actions::connect_reader(&reader, window);
+        crate::unsubscribe::connect_reader(self, &reader);
         self.reader.replace(Some(reader));
         self.refresh_commands();
     }
@@ -2589,11 +2690,27 @@ fn quick_tooltips(keymap: &Keymap) -> Vec<(Quick, String)> {
 }
 
 /// The selected messages whose rows are loaded.
+/// What the mail commands act on now: the selected group's mail, or the selected messages
+/// whose rows are loaded.
 fn loaded_targets(list: &MessageList) -> Vec<Target> {
+    if list.selected_group().is_some() {
+        return list.group_targets().unwrap_or_default();
+    }
     list.selected_positions()
         .into_iter()
         .filter_map(|position| list.target_at(position))
         .collect()
+}
+
+/// The selection moves on past what a command takes out of the view: to the next group for a
+/// group's mail, else past the messages.
+fn advance(list: &MessageList, targets: &[Target]) {
+    if list.selected_group().is_some() {
+        list.advance_group();
+    } else {
+        let ids: Vec<MessageId> = targets.iter().map(|target| target.id).collect();
+        list.advance_after(&ids);
+    }
 }
 
 /// Resolves once both futures have, polling them together.

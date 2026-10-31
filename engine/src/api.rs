@@ -179,6 +179,9 @@ pub enum Command {
     /// amendment): one HTTPS request, only when the user runs the command. Answered with one
     /// `UpdateChecked`.
     CheckForUpdates { request: RequestId },
+    /// Unsubscribe's one-click POST to `uri` (RFC 8058, ADR-023), after the user confirmed it.
+    /// Answered with one `OneClickUnsubscribed`.
+    OneClickUnsubscribe { request: RequestId, uri: String },
     /// Stop every connection and the runtime.
     Shutdown,
 }
@@ -364,6 +367,11 @@ pub enum Event {
         request: RequestId,
         result: Result<Version, UpdateError>,
     },
+    /// The answer to `OneClickUnsubscribe`.
+    OneClickUnsubscribed {
+        request: RequestId,
+        result: Result<(), UnsubscribeError>,
+    },
 }
 
 /// Why an account's rules didn't run.
@@ -446,8 +454,10 @@ impl SyncStatus {
             LoginFailure::WrongPassword
             | LoginFailure::AppPasswordRequired
             | LoginFailure::ImapDisabled
+            | LoginFailure::SmtpAuthDisabled
             | LoginFailure::OAuthRequired
-            | LoginFailure::SignInDeclined => SyncStatus::NeedsSignIn(failure),
+            | LoginFailure::SignInDeclined
+            | LoginFailure::ServerNotMicrosoft => SyncStatus::NeedsSignIn(failure),
             LoginFailure::Certificate => SyncStatus::CertificateChanged,
             LoginFailure::NoTls
             | LoginFailure::Unreachable
@@ -584,6 +594,21 @@ pub enum UpdateError {
     NoRelease,
     #[error("GitHub's answer couldn't be read")]
     Unreadable,
+}
+
+/// Why a one-click unsubscribe didn't go through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum UnsubscribeError {
+    /// Not an HTTPS URI, one with a user name or password, or a host that isn't public.
+    #[error("the address isn't one Sealwax sends to")]
+    Refused,
+    #[error("the sender's server couldn't be reached")]
+    Offline,
+    #[error("the sender's server didn't answer in time")]
+    Timeout,
+    /// An answer other than 2xx, a redirect included.
+    #[error("the sender's server didn't confirm it")]
+    NotConfirmed,
 }
 
 /// Why saving or removing an account failed.

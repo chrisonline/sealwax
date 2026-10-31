@@ -249,6 +249,7 @@ mod tests {
                 has_attachments: parsed.has_attachments(),
                 thread_count: 1,
                 labels: Vec::new(),
+                subscription: false,
             },
             headers: parsed.headers,
             body_kind: parsed.body_kind,

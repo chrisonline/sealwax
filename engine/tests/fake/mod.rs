@@ -10,8 +10,8 @@
 //! For the op queue's writes (M4): SELECT read-write (or READ-ONLY by mailbox) with
 //! PERMANENTFLAGS, UID STORE, UID MOVE and UID COPY with COPYUID untagged, tagged or absent, UID
 //! EXPUNGE, EXPUNGE and CLOSE, UID SEARCH UNSEEN and UNDELETED; MOVE and UIDPLUS switched on
-//! and off; a command refused with a given reply, cut off before it runs, run with its reply
-//! lost, or run and never answered.
+//! and off; a command refused with a given reply (IDLE too), cut off before it runs, run with
+//! its reply lost, or run and never answered.
 //! A STORE in an EXAMINEd mailbox is answered OK and ignored, as Dovecot does (S1).
 //! For the Sent copy and drafts (M6): APPEND with a synchronizing or non-synchronizing literal,
 //! answered with APPENDUID where UIDPLUS is on; a connection cut part of the way into a literal;
@@ -21,6 +21,8 @@
 //! subscriptions, LIST patterns with `*` and `%`, and a hierarchy delimiter of choice.
 //! For replies async-imap can't parse (issue #20): a message whose header FETCH response has a
 //! garbled BODYSTRUCTURE or garbled FLAGS ([`Garble`]); BODYSTRUCTURE only when asked for.
+//! For a reply that never comes whole: a command answered with text of the test's choosing,
+//! then the connection cut ([`World::cut_with`]).
 //! Synthetic data only.
 
 #![allow(dead_code)]
@@ -156,6 +158,9 @@ pub struct World {
 pub enum Garble {
     /// A multipart BODYSTRUCTURE with a number where a part's subtype belongs.
     Structure,
+    /// A BODYSTRUCTURE of multiparts nested 10,000 deep: past imap-proto's limit, and without
+    /// it, past a 2 MiB stack.
+    Deep,
     /// A parenthesized list inside FLAGS, whatever else is asked for.
     Flags,
 }
@@ -186,6 +191,8 @@ enum Fault {
     LoseReply,
     /// It runs, and the server never answers on that connection again.
     Hold,
+    /// Answered with this text alone, and the connection is cut.
+    CutWith(String),
 }
 
 pub const NOW: i64 = 1_791_158_400;
@@ -279,6 +286,20 @@ impl World {
     /// The next command containing `needle` runs, and its connection goes silent for good.
     pub fn hold(&mut self, needle: &str) {
         self.faults.push((needle.to_owned(), Fault::Hold));
+    }
+
+    /// The next command containing `needle` is answered with `text` alone, which needn't be a
+    /// whole reply, and the connection is cut after it.
+    pub fn cut_with(&mut self, needle: &str, text: &str) {
+        self.faults
+            .push((needle.to_owned(), Fault::CutWith(text.to_owned())));
+    }
+
+    /// Whether a fault waits for `command`.
+    fn faulted(&self, command: &str) -> bool {
+        self.faults
+            .iter()
+            .any(|(needle, _)| command.contains(needle.as_str()))
     }
 
     fn fault(&mut self, command: &str) -> Option<Fault> {
@@ -1359,6 +1380,11 @@ fn uid_command(
                 (true, Some(Garble::Structure)) => "BODYSTRUCTURE ((\"text\" 7 1)\
                      (\"text\" \"html\" NIL NIL NIL \"7bit\" 1 1) \"alternative\") "
                     .to_owned(),
+                (true, Some(Garble::Deep)) => format!(
+                    "BODYSTRUCTURE {}(\"text\" \"plain\" NIL NIL NIL \"7bit\" 1 1){} ",
+                    "(".repeat(10_000),
+                    " \"mixed\")".repeat(10_000)
+                ),
                 (true, _) => format!(
                     "BODYSTRUCTURE (\"text\" \"plain\" (\"charset\" \"utf-8\") NIL NIL \"7bit\" {} 1) ",
                     TEXT.len()
@@ -1723,7 +1749,13 @@ async fn session(mut io: BufReader<Box<dyn Io>>, world: Arc<Mutex<World>>, epoch
                 None => return,
             }
         }
-        if command.eq_ignore_ascii_case("IDLE") && caps.contains("IDLE") {
+        if command.eq_ignore_ascii_case("IDLE")
+            && caps.contains("IDLE")
+            && !world
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .faulted(command)
+        {
             arrived(
                 &mut world.lock().unwrap_or_else(|e| e.into_inner()),
                 command,
@@ -1755,6 +1787,10 @@ async fn session(mut io: BufReader<Box<dyn Io>>, world: Arc<Mutex<World>>, epoch
                     answer(&mut world, &mut state, tag, command);
                     world.cuts += 1;
                     Reply::Silent
+                }
+                Some(Fault::CutWith(text)) => {
+                    world.cuts += 1;
+                    Reply::Cut(text)
                 }
                 None => answer(&mut world, &mut state, tag, command),
             }

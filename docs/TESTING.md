@@ -74,6 +74,331 @@ Each milestone's exit criteria are the acceptance list. Results go here as dated
 
 ## Results
 
+### Actions on a whole group (issue #25) — 2026-10-30
+
+[ADR-023 amendment](DECISIONS.md#adr-023-amendment--a-group-takes-the-mail-commands-2026-10-30). This machine; the app headless on Broadway display 37; no real account and no real server.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| Store: `a_groups_mail_in_the_view_newest_first_with_its_newest_subscription` | A sender's and a domain's mail in the view only (not another folder's), newest first, with folder and flags; the Unread filter takes only the unread; the newest message with List-Unsubscribe; none for `GroupBy::None`, an empty key or an unknown sender; `Debug` without addresses | Pass |
+| Self-test `list-senders` | 127 of 127 (79 before): a selected group's page in the reader (name, "3 messages"), Reply disabled, Archive enabled; Mark as Unread and Mark as Read on all of a group's mail; `e` with the focus on the groups archives the group and the next group is selected; Undo brings it back; with the Unread chip, Archive takes only the group's unread message; Unsubscribe disabled for a group without the header and enabled with it; the dialog's Cancel; Unsubscribe with "Archive" chosen archives the group (the fictional account's `mailto:` unsubscribe itself doesn't go through, as before) | Pass |
+| CI, `SEALWAX_CI_DISPLAY=37 bash tools/ci.sh --ui` on the change (ended 10:52) | exit 0; 1,590 passed, 0 failed, 99 ignored; all 85 self-test scripts, 8,285 of 8,285 steps; hostile suite `production_failures=[]`, 60 cases. A doc comment in `app/src/list/mod.rs` was reworded during the run; `cargo fmt --check` passes after it | Pass |
+| A group action on a real account (the server's moves and flags for a large group), its speed on a large store, the right-click menu on a group row (none is built) | Not run | Not verified |
+
+### 1.1.0 — 2026-10-29
+
+The version change for 1.1.0: `Cargo.toml`'s version, both lock files (only Sealwax's own crates, 1.0.6 → 1.1.0), CHANGELOG's "1.1.0 — 2026-10-29" (the section that was "Not released yet"), README's version line, its search and newsletter lines and its thanks. The changes are in the section below and in the two IDLE sections of 2026-10-27 and 2026-10-28. This machine.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI, `SEALWAX_CI_DISPLAY=37 bash tools/ci.sh --ui` on the version change (21:43–22:02) | exit 0; 1,589 passed, 0 failed, 99 ignored; all 85 self-test scripts, 8,237 of 8,237 steps; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`, 272 s; `target/debug/sealwax --version` says `sealwax 1.1.0`; no `gtk4-broadwayd` left | Pass |
+| The push range (`97bb020..7d540e3`, 6 commits, 76 files) scanned before pushing | No working doc, home path, user name or hostname; nothing about findings not yet public; the only addresses are the commit author and test fixtures (`example.test`, `butikk.example`, `shop.example` and other `.example` names) | Pass |
+| `v1.1.0` on `7d540e3`, `main` and the tag pushed | GitHub's `main` and `v1.1.0` are `7d540e3` (tag object `1aad45b`) | Pass |
+| `python3 tools/release.py build` on `v1.1.0` (22:14–22:19) | makepkg's `check()`: 1,150 passed, 0 failed, 91 ignored; the Microsoft client ID built in; `SHA256SUMS` checks for all four files; the binary says `sealwax 1.1.0` and holds no home-folder path or user name; both license files are in the package, with async-imap, imap-proto and lettre listed. Package SHA-256 `cf6d42b0…ea31` | Pass |
+| The clean-container install test | Not run: Docker wasn't running, and starting it is the owner's | Not verified |
+| The release [v1.1.0](https://github.com/PixDevsApps/sealwax/releases/tag/v1.1.0) (`tools/release.py github` from the tagged commit, 21:19:41 UTC) | Not a draft or pre-release; GitHub's latest; its five files; the notes are CHANGELOG's section; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` gives the build's package (SHA-256 `cf6d42b0…`), and the published `SHA256SUMS` is the local one | Pass |
+| Installed here | `pacman -Q sealwax`: `1.1.0-1`, installed 2026-10-29 22:27 CET (read 2026-10-30); the binary not compared with the package | Pass |
+
+### Group by sender and List-Unsubscribe (1.1, issues #24 and #14) — 2026-10-29
+
+[ADR-023](DECISIONS.md#adr-023--group-by-sender-and-list-unsubscribe-2026-10-29). This machine; the fake IMAP server, the POP3 actor's fake and loopback HTTP servers on 127.0.0.1; the app headless on Broadway display 37; no real account and no real sender contacted.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `domain::unsubscribe`, `domain::senders`, the `is:subscription`, `sender:` and `domain:` parser tests, `reads_list_unsubscribe` | Pass: folded URIs joined, only `https:`/`http:`/`mailto:` kept (four at most, 2,048 characters each), one-click only for HTTPS with the Post header, `Debug` prints no URI; `domain:` keys on the registrable domain | Pass |
+| Store: schema v13 from a v12 store (`v13_fills_the_sender_domains_and_marks_folders_for_the_backfill`), headers kept and searched, `unsubscribe_targets` (one per List-Id or sender, newest first, the record read back), `a_view_grouped_by_sender_and_by_domain` (counts, unread, the Unread chip) | Pass; the four older migration tests take a v13 store back first | Pass |
+| Backfill: `mail_stored_before_v13_gets_its_list_unsubscribe_once` (`engine/tests/sync.rs`, QRESYNC, CONDSTORE and IMAP4rev1 flavours) and `mail_stored_before_v13_gets_its_list_unsubscribe_from_the_originals` (POP3 actor) | Rows cleared and folders marked by hand, then one pass fills them and clears the marks; a folder the policy doesn't sync is filled when opened; STATUS skips the folders again afterwards (not on IMAP4rev1, which always passes) | Pass |
+| One-click POST (`engine::unsubscribe`, loopback HTTP) | `POST` with `Content-Type: application/x-www-form-urlencoded`, `User-Agent: Sealwax` and the body `List-Unsubscribe=One-Click`; no Cookie, Authorization or Referer; 302, 404 and 500 not confirmations (no redirect followed); `http:`, `mailto:`, a URI with a password, 127.0.0.1, ::1, 10/8, 192.168/16, 169.254.169.254, fd00::/8 and `localhost` refused before any connection; nothing listening is offline | Pass |
+| Self-test `list-senders` (new) | 79 of 79 (69 before the reader's link): groups by sender and domain from the store, a group opened as a search and Escape back with the focus on the groups, the chips, new mail updating the groups, Unsubscribe enabled only with the header, the dialog, a one-click through the fake engine and its toast, Cancel sending nothing; the reader card's Unsubscribe link shown only on a message with the header and opening the dialog for its own message | Pass |
+| CI, `SEALWAX_CI_DISPLAY=37 bash tools/ci.sh --ui` on the final tree | exit 0; 1,589 tests passed, 0 failed; 85 self-tests; hostile suite `production_failures=[]`, 60 cases. Three earlier runs failed on pins the change moved, each updated: the keymap tables (USER_GUIDE.md and the M1 report), the message menu's items (`reply-default`, `rules-menu`: a disabled Unsubscribe…) and the search suggestions (`search-suggestions`) | Pass |
+| A real one-click unsubscribe, a `mailto:` unsubscribe sent through SMTP, the backfill on a real account, grouping on a large store | Not run | Not verified |
+
+### INBOX polled while the IDLE connection waits, and its count starts over after a good run — 2026-10-28
+
+[ADR-006 amendment](DECISIONS.md#adr-006-amendment--inbox-polled-while-the-idle-connection-waits-and-its-count-starts-over-after-a-good-run-2026-10-28). This machine; the fake TLS server on 127.0.0.1 only; no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `inbox_is_polled_while_the_idle_connection_waits_to_try_again` (`engine/tests/actor.rs`: IDLE refused with `NO [CANNOT] …` twice, backoff 30 s, INBOX polled every 300 ms, account passes every 60 s; then `Reconnect`) | New mail in the store within 5 s while the IDLE connection still waits (two IDLEs); after `Reconnect`, IDLE runs and no `EXAMINE` comes in the next second. Before the fix: no new mail within 5 s, and the test fails | Pass |
+| `an_idle_connection_that_ran_well_is_made_again_at_once_every_time` (`engine/tests/actor.rs`: backoff 2 s; three times, 2.3 s of IDLE, then the server closes it) | Each made again within 500 ms. Before the fix: the second after 1.33 s, and the test fails | Pass |
+| The two tests, five runs in a row, alone | 5 of 5 passed (7.0 s each) | Pass |
+| Each part of the fix undone for one run: no new start of the count; the IDLE connection never saying it waits; the command connection not woken by it; the IDLE connection never saying the wait is over | Each fails a test: round 2 made again after 1.87 s; no new mail within 5 s (twice); `EXAMINE`s while IDLE runs | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged; 09:26–09:29 on the final tree, after a first run at 09:24–09:26 with comments still being edited, also exit 0) | exit 0; 1,570 passed, 0 failed, 99 ignored; formatting and Clippy clean; four warnings each from lettre and async-imap (local crates) | Pass |
+| A real server refusing IDLE, or a real connection lost after a good run | Not run | Not verified |
+
+### An IDLE the server refuses is an error, not a panic — 2026-10-27
+
+[ADR-006 amendment](DECISIONS.md#adr-006-amendment--an-idle-the-server-refuses-is-an-error-not-a-panic-2026-10-27), [vendor/README.md](../vendor/README.md), [chatmail/async-imap#151](https://github.com/chatmail/async-imap/issues/151). This machine; scripted and fake TLS servers on 127.0.0.1 only; no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| What the panic did to an account: the fake server answering every IDLE with a bare `BAD`, an account added through the engine (account passes every 2 s, INBOX polled every 1 s; a probe test, not kept), before the fix | The IDLE connection panicked at `vendor/async-imap/src/extensions/idle.rs:205` each time it started (five times in 10 s), and started again after each account pass with a new login; the account stayed synced; a new message was announced 1.0 s after it arrived, by the INBOX poll. After the fix: no panic; the IDLE connection reconnected after its backoff; the message was announced after 28 ms | Pass |
+| `an_idle_the_server_refuses_ends_in_an_error_at_once` (`engine/tests/newmail.rs`, the fake server refusing IDLE with `BAD`, `BAD [CLIENTBUG] …`, `NO`, `NO [CANNOT] …`) | Each an error within 5 s. With the published `idle.rs`: the panic. With only `NO` left as published: `NO` took 30.0 s, and the test fails | Pass |
+| `idle_refused` (async-imap's own tests, `src/client.rs`, the same four replies on its mock stream) and the rest of its tests, outside the repository | 75 passed with `--no-default-features --features runtime-tokio`, 74 with the default `runtime-async-std`. With the published `idle.rs`: `idle_refused` panics | Pass |
+| #151's items 2 and 3 against Sealwax's reading: `an_answer_is_whole_only_at_a_tagged_ok` (`engine/src/imap/raw.rs`, a scripted TLS server: a FETCH response, then `NO [SERVERBUG] …`, a bare `BAD`, or the connection dropped) | `ImapError::No` with its code, `ImapError::Bad`, a connection error; one response seen each time. With `raw.rs` reading a `NO` as success for one run: the test fails | Pass |
+| The vendored copy against the published crate (cargo's cached `async-imap-0.12.0`, `diff -r`) | Differences only in `src/imap_stream.rs`, `src/extensions/idle.rs` and `src/client.rs` (the new test) | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged; 17:29–17:31; the first run stopped at formatting, fixed) | exit 0; 1,568 passed, 0 failed, 99 ignored; formatting and Clippy clean; four warnings each from lettre and async-imap (local crates) | Pass |
+| A real server refusing IDLE | Not run: no such server | Not verified |
+
+### 1.0.6 — 2026-10-27
+
+The version change for 1.0.6: `Cargo.toml`'s version, both lock files (only Sealwax's own crates, 1.0.5 → 1.0.6), CHANGELOG's "1.0.6 — 2026-10-27" (the section that was "Not released yet", with "A security update. Please update.") and README's version line. The three changes (`27bbfea`, `f3defe2`, `dc43bac`) are in the sections below, and the advisory is [GHSA-f9g6-hwxr-7v96](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-f9g6-hwxr-7v96). This machine. The release commit is `7eb94c2`: `27188ee` with the advisory's link added to the CHANGELOG once the advisory had its ID, nothing else changed (`git diff 27188ee 7eb94c2`: two lines of `CHANGELOG.md`). CI ran on `27188ee`; the package was built and install-tested on `7eb94c2`.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui` on the version change (11:14–11:30) | exit 0; 1,566 passed, 0 failed, 99 ignored; all 84 self-test scripts, 8,157 of 8,157 steps; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`, 278 s; `target/debug/sealwax --version` says `sealwax 1.0.6`; no `gtk4-broadwayd` left | Pass |
+| The push range (`e8bead1..7eb94c2`, 6 commits, 64 files, 33 of them `vendor/async-imap/`) scanned before pushing | No working doc, home path, user name, hostname or client ID; nothing about findings not yet public; the only addresses are the commit author, test fixtures (`example.com`, `example.org`, `example.test`) and async-imap's own (its author and its test server) | Pass |
+| `v1.0.6` on `7eb94c2`, `main` and the tag pushed | GitHub's `main` and `v1.0.6` are `7eb94c2` (tag object `3b6e58a`) | Pass |
+| `python3 tools/release.py build` on `v1.0.6` (13:25–13:30) | makepkg's `check()`: 1,128 passed, 0 failed, 91 ignored; the Microsoft client ID built in; `SHA256SUMS` checks for all four files; the binary says `sealwax 1.0.6` and holds no home-folder path or user name; both license files are in the package, with async-imap, imap-proto and lettre listed. Package SHA-256 `6aa02595…418f` | Pass |
+| `bash tools/install-test.sh .local/release/1.0.6/sealwax-1.0.6-1-x86_64.pkg.tar.zst` (local `archlinux:base`, `--pull never`; 13:30) | exit 0: pacman installed the package and its dependencies in a fresh container, no library missing; `/usr/bin/sealwax --version` says `sealwax 1.0.6`; both license files installed; `install-smoke` 16 of 16 (the window, a message in the reader, its web process in WebKit's sandbox); the container removed; log in `.local/install-test/20261027-133019/` | Pass |
+| The release [v1.0.6](https://github.com/PixDevsApps/sealwax/releases/tag/v1.0.6) (`tools/release.py github` from the tagged commit, 12:31:12 UTC) | Not a draft or pre-release; GitHub's latest; its five files; the notes are CHANGELOG's section and link the advisory; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` and `releases/download/v1.0.6/sealwax-1.0.6-1-x86_64.pkg.tar.zst` both give the build's package (SHA-256 `6aa02595…`), and the published `SHA256SUMS` is the local one | Pass |
+| [GHSA-f9g6-hwxr-7v96](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-f9g6-hwxr-7v96) | Ecosystem set to Other (affected `<= 1.0.5`, patched `1.0.6`, medium 5.9, CWE-770 and CWE-789 unchanged); a CVE requested (202 Accepted); published 12:31:41 UTC; the page answers 200 without signing in. No CVE ID yet | Pass |
+| Installed here | Not yet | Not verified |
+
+### POP3: RETR held to LIST's size, a listing to a size and a pace — 2026-10-27
+
+[ADR-006 amendment](DECISIONS.md#adr-006-amendment--pop3-retr-held-to-lists-size-a-listing-to-a-size-and-a-pace-2026-10-27). This machine; scripted TLS servers on 127.0.0.1 only; no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `retr_may_send_up_to_twice_list_s_size_and_no_more`, `a_listing_too_long_in_all_is_refused`, `a_listing_that_trickles_ends_at_its_deadline` (`engine/tests/pop3.rs`) | Pass: 198,970 octets for a LIST of 100,000 read whole; 70,700 for a LIST of 100 too large and the session closed; a 500-line UIDL listing over a 2,000-octet limit refused; a line every 200 ms cut off at the 500 ms deadline instead of running 6 s. The POP3 suite's 28 tests in 2.2 s | Pass |
+| The same three with the RETR bound, the octets limit and the listing deadline turned off for one run | All three failed (25 passed, 3 failed, 6.4 s) | Pass |
+| `a_listing_has_until_its_deadline_for_the_octets_read`, the octets case in `lines_and_status_lines_have_limits` (`wire.rs`), `retr_may_send_twice_list_s_size_and_a_little_more` and `a_listing_has_time_in_proportion_to_what_it_sent` (`session.rs`) | Pass | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged; 10:28–10:31) | exit 0; 1,566 passed, 0 failed, 99 ignored, `pop3_corpus` included; formatting and Clippy clean; four warnings each from lettre and async-imap; `tools/test_licenses.py` 8 passed | Pass |
+| The fuzz workspace, `cargo check --all-targets` with `CARGO_TARGET_DIR=target/fuzz` | Finished, no errors. The POP3 target wasn't run | Pass |
+| A real POP3 server's sizes against the RETR bound, and a large real listing against the deadline | Not run: no real POP3 account was used | Not verified |
+
+### async-imap vendored: a literal's buffer grows with its data — 2026-10-27
+
+[ADR-006 amendment](DECISIONS.md#adr-006-amendment--async-imap-vendored-a-literals-buffer-grows-with-its-data-2026-10-27), [vendor/README.md](../vendor/README.md). This machine; scripted and fake TLS servers on 127.0.0.1 only; no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| The vendored copy against the published crate: cargo's cached `async-imap-0.12.0.crate`, SHA-256 against the lock file's checksum, then `diff -r` | `f97b87216c9f0ccc63c516263169085fa34bba25633f6d96c6a9b9ca1fd5f70a` on both; identical before the patch; after it, differences only in `src/imap_stream.rs` (`ensure_capacity` and its comment, two tests) | Pass |
+| `a_literals_announced_size_isnt_allocated_before_its_data` (`engine/tests/literal_size.rs`, a counting allocator; a 400 MB literal announced to NOOP, 1 MiB of it sent, then the connection cut) | 2,100,683 bytes allocated (the limit is 32 MiB). With the published `imap_stream.rs` put back for one run: 398,978,470 bytes, and the test fails | Pass |
+| `a_literal_that_arrives_in_pieces_comes_whole` (`engine/src/imap/raw.rs`, 1 MiB in 1,000-byte writes) | Pass: the body read whole and unchanged | Pass |
+| async-imap's own tests on the patched copy, outside the repository (`cargo test --lib`) | 74 passed with `--no-default-features --features runtime-tokio`, 73 with the default `runtime-async-std`; the published crate: 73 with `runtime-tokio` | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged; 10:05–10:08) | exit 0; 1,560 passed, 0 failed, 99 ignored; formatting and Clippy clean; four warnings each from lettre and async-imap (local crates); `tools/test_licenses.py` 8 passed | Pass |
+| The fuzz workspace, `cargo check --all-targets` with `CARGO_TARGET_DIR=target/fuzz`; `python3 tools/licenses.py` | Both lock files lose async-imap's source and checksum; the check finished clean; the licence file lists async-imap 0.12.0 from `vendor/async-imap` with its MIT and Apache texts | Pass |
+| A real server announcing a large literal | Not run: no such server | Not verified |
+
+### Every IMAP command held to a budget — 2026-10-27
+
+[ADR-006 amendment](DECISIONS.md#adr-006-amendment--every-imap-command-held-to-a-budget-2026-10-27). This machine; scripted TLS servers on 127.0.0.1 only; no real account and no outside network.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| The budget's tests (`engine/src/imap/raw.rs`, a test budget of 1,000 responses and 1 MiB): `responses_without_end_stop_at_the_budget`, `long_responses_without_end_stop_at_the_budget_in_bytes`, `an_answer_within_the_budget_is_read_whole_and_one_past_it_is_not`, `pipelined_commands_share_one_budget`, `the_budgets_hold_the_largest_honest_answers` | Pass: the raw module's 11 tests in 0.16 s. Endless `* 1 EXISTS` stops after exactly 1,000 responses; endless 11 KB `* SEARCH` lines stop with no more UIDs collected than 1 MiB holds | Pass |
+| The same tests with the budget's check turned off for one run | The answer one response past the budget and the two pipelined commands failed; the two floods ran past 60 s (since then they have a 30 s limit, so a missed flood fails instead of hanging) | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged; ended 09:55) | exit 0; 1,558 passed, 0 failed, 99 ignored; formatting and Clippy clean; lettre's four warnings as before; `tools/test_licenses.py` 8 passed. The first two runs stopped at formatting and then at Clippy (`assertions_on_constants` in the new test), both fixed | Pass |
+| The fuzz workspace, `cargo check --all-targets` with `CARGO_TARGET_DIR=target/fuzz` | Finished, no errors | Pass |
+| A real server's largest honest answer (a full flag scan of a very large folder) against the budget | Not run: estimated from the responses' form (about 100 bytes a message), not measured | Not verified |
+
+### The new banners in the self-tests — 2026-10-26
+
+`status-banners` gets the two banners of 1.0.5: the scripted engine's `sending-off` (`NeedsSignIn(SmtpAuthDisabled)`) and `add-again` (`NeedsSignIn(ServerNotMicrosoft)`), each with its queue name, sidebar words, title, body, no buttons, tint and contrast, and a screenshot (`.local/selftest/status-sending-off.png`, `status-add-again.png`). This machine, headless (display 34).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `status-banners` alone | 283 of 283 (261 before); formatting and Clippy clean | Pass |
+| The screenshots, looked at | Both banners as designed (the warning tint and the mail-send icon; the error tint and the shield). In the sidebar, "needs adding again" leaves the account's name one letter ("K…") at the default sidebar width, and "sending off" cuts it to "KARI NOR…"; the footer's summary is cut too ("4 accounts · adding a…"). The P3 follow-up on long names, made worse | Found |
+
+### 1.0.5 — 2026-10-26
+
+The version change for 1.0.5: `Cargo.toml`'s version, both lock files (only Sealwax's own crates, 1.0.4 → 1.0.5), CHANGELOG's "1.0.5 — 2026-10-26" (the section that was "Not released yet") and README's version line. The five changes are in the sections below. This machine.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui` on the version change (16:56–17:11) | exit 0; 1,553 passed, 0 failed, 99 ignored; all 84 self-test scripts, 8,135 of 8,135 steps; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`, 272 s; `target/debug/sealwax --version` says `sealwax 1.0.5`; no `gtk4-broadwayd` left | Pass |
+| The push range (`0d1e52d..db974f0`, 1 commit, 6 files) scanned before pushing | No working doc, home path, hostname or client ID; the only address is the commit author | Pass |
+| `v1.0.5` on `db974f0`, `main` and the tag pushed | GitHub's `main` and `v1.0.5` are `db974f0` | Pass |
+| `python3 tools/release.py build` on `v1.0.5` (17:15–17:19) | makepkg's `check()`: 1,115 passed, 0 failed, 91 ignored; the Microsoft client ID built in; `SHA256SUMS` checks for all four files; the binary says `sealwax 1.0.5` and holds no home-folder path or user name; both license files are in the package. Package SHA-256 `ad433f99…7b1e` | Pass |
+| `bash tools/install-test.sh .local/release/1.0.5/sealwax-1.0.5-1-x86_64.pkg.tar.zst` (local `archlinux:base`, `--pull never`; 17:20) | exit 0: pacman installed the package and its dependencies in a fresh container; `/usr/bin/sealwax --version` says `sealwax 1.0.5`; both license files installed; `install-smoke` 16 of 16 (the window, a message in the reader, its web process in WebKit's sandbox); the container removed; log in `.local/install-test/20261026-172002/` | Pass |
+| The release [v1.0.5](https://github.com/PixDevsApps/sealwax/releases/tag/v1.0.5) (`tools/release.py github` from the tagged commit, 16:21:09 UTC) | Not a draft or pre-release; GitHub's latest; its five files; the notes are CHANGELOG's section; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` and `releases/download/v1.0.5/sealwax-1.0.5-1-x86_64.pkg.tar.zst` both give the build's package (SHA-256 `ad433f99…`), and the published `SHA256SUMS` is the local one | Pass |
+
+### Development builds keep their own folders — 2026-10-26
+
+[ADR-010 amendment](DECISIONS.md#adr-010-amendment--development-builds-keep-their-own-folders-2026-10-26). This machine; the headless UI suites (Broadway, display 19); no real account and nothing in the real folders.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `a_development_build_keeps_its_own_folders` (`app/src/config.rs`) and `dirs_under_a_root` (`infrastructure/src/xdg.rs`: `SealwaxDirs::named(DEVEL_DIR)` ends in `sealwax-devel` for all four, `from_env` in `sealwax`) | Pass | Pass |
+| The debug build headless with the four XDG homes in a scratch folder (`SEALWAX_EXIT_AFTER_MS=1500`, display 19) | `first-frame` logged; it made `data/sealwax-devel` and `cache/sealwax-devel` (plus GTK's `cache/gtk-4.0`), no `sealwax` folder | Pass |
+| `background-start` (its spawned Sealwaxes are debug builds; its three paths now `sealwax-devel`) | 65 of 65 alone | Pass |
+| CI, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui` (13:48–14:02) | exit 0; 1,553 passed, 0 failed, 99 ignored; all 84 self-test scripts, 8,135 of 8,135 steps (`activation` 62, `background-start` 65, `reply-mailto-start` 12, `triage-keys` 264); the smoke run's `first-frame`; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`, 272 s; formatting and Clippy clean; no `gtk4-broadwayd` left | Pass |
+
+### A Microsoft account with a server that isn't Microsoft's: "needs adding again" — 2026-10-26
+
+[ADR-008 amendment](DECISIONS.md#adr-008-amendment--a-server-that-isnt-microsofts-says-so-2026-10-26). This machine; a scripted SMTP server on 127.0.0.1 and the headless UI suites (Broadway, display 19); no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `a_token_goes_to_no_smtp_server_but_microsofts` (`engine/src/smtp/submit/tests.rs`) | `SubmitError::Connect(ServerNotMicrosoft)` (was `Other`), failure `Account`; no token fetched, nothing connected | Pass |
+| The assistant's notices (`app/src/setup/text.rs`: one heading per failure with `ServerNotMicrosoft` among them, and its sign-in-again text "This account's server isn't Microsoft's", "Remove the account and add it again") and the app's sidebar words (`needs adding again`, the error dot), `NeedsSignIn(ServerNotMicrosoft)` → `AddAgain`, the banner's order (after the sign-ins) and `a_server_that_isnt_microsofts_says_to_add_the_account_again` | Pass | Pass |
+| CI, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui`, first run (13:19–13:31) | 1,552 passed, 0 failed, 99 ignored; every script up to `triage-keys` passed, which failed at step 186 as in the run before (the reader's `y` after an archive lost; 245 of 264), so the rest didn't run | Fail (flake) |
+| `triage-keys` alone, five times (load about 1) | 264 of 264, five times | Pass |
+| CI, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui`, again (13:32–13:45) | exit 0; 1,552 passed, 0 failed, 99 ignored; all 84 self-test scripts, 8,135 of 8,135 steps; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`, 275 s; formatting and Clippy clean; no `gtk4-broadwayd` left | Pass |
+| A Microsoft account saved by 1.0.2 with a server that isn't Microsoft's | Not run | Not verified |
+
+### SMTP AUTH turned off after setup: "sending off" — 2026-10-26
+
+[ADR-015 amendment](DECISIONS.md#adr-015-amendment--smtp-auth-turned-off-after-setup-holds-the-sends-2026-10-26). This machine; a scripted SMTP server on 127.0.0.1 and the headless UI suites (Broadway, display 19); no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `smtp_auth_turned_off_waits_for_the_account` (`engine/src/smtp/submit/tests.rs`: the login refused with Microsoft's "535 5.7.139 … the user's SmtpClientAuthentication is disabled for the mailbox") | `SubmitError::Auth(SmtpAuthDisabled)`, failure `Account` (was `Retry`) | Pass |
+| The app's tests: the sidebar's words and dots (`sending off`, the warning dot), `NeedsSignIn(SmtpAuthDisabled)` → `SendingOff`, the banner's order (after the sign-ins, before the sends that may have gone) and `sending_turned_off_says_who_can_turn_it_on` | Pass | Pass |
+| CI, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui`, first run (12:49–13:01) | 1,551 passed, 0 failed, 99 ignored; every self-test script up to `triage-keys` passed, which failed at step 186: the reader's `y` after an archive was lost and every later action-log step was one behind (245 of 264), the P2 flake in the follow-up table. CI stops at a failing script, so the scripts after it and the hostile suite didn't run | Fail (flake) |
+| `triage-keys` alone, three times (`tools/headless.sh 19 … --self-test tests/selftest/triage-keys.sealwax-test`) | 264 of 264, three times | Pass |
+| CI, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui`, again (13:02–13:15) | exit 0; 1,551 passed, 0 failed, 99 ignored; all 84 self-test scripts, 8,135 of 8,135 steps (`status-banners` 261, `triage-keys` 264, `window-sidebar` 72); the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`, 272 s; formatting and Clippy clean; no `gtk4-broadwayd` left | Pass |
+| A live Microsoft 365 tenant with SMTP AUTH turned off after the account was added | Not run | Not verified |
+
+### A large message whose BODYSTRUCTURE can't be read comes whole — 2026-10-26
+
+[ADR-006 amendment](DECISIONS.md#adr-006-amendment--a-large-message-whose-bodystructure-cant-be-read-comes-whole-2026-10-26). This machine; scripted IMAP servers on 127.0.0.1; no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `a_large_message_whose_structure_cant_be_read_comes_whole_on_the_next_connection` (`engine/src/imap/bodies/tests.rs`: two messages of 12.4 MB, the first's BODYSTRUCTURE garbled as in issue #20's kind) | The first connection ends with `Structure` naming that message and answers nothing; with it in the set, the second fetches it whole without asking for its structure, then the other by its structure; both stored whole, only `BODY.PEEK` | Pass |
+| `a_large_message_whose_structure_cant_be_read_comes_whole_after_one_reconnect` (`engine/tests/bodies.rs`, through the engine service: three large messages, the middle one garbled) | All three answered `Ok` and stored as the server has them; the garbled one's BODYSTRUCTURE asked once and its body once; two logins (one reconnect). With the worker's fallback turned off for one run, the two messages from the garbled one on end as `Other` | Pass |
+| The body module's other tests (11) and the service's first body test, after the setup moved into a helper | Pass | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged; 12:41–12:44) | exit 0; 1,549 passed, 0 failed, 99 ignored; formatting and Clippy clean (the first two runs stopped at rustfmt's layout of the new tests and a needless borrow in the moved setup, fixed); lettre's four warnings as before; `tools/test_licenses.py` 8 passed | Pass |
+| A real server whose BODYSTRUCTURE imap-proto can't read | Not run: none known; issue #20's reply is not known | Not verified |
+
+### A staggered connect to a host's addresses — 2026-10-26
+
+[ADR-006 amendment](DECISIONS.md#adr-006-amendment--a-hosts-addresses-tried-in-a-staggered-race-2026-10-26). This machine; listeners on 127.0.0.1 only; no real account and no outside network.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| A listener made with `listen(0)` and one connection queued, on 127.0.0.1 (a Python check before the test was written) | The first connect completed in 0.01 s; the next three each timed out at 0.5 s: the kernel drops their SYNs, as a route that drops packets does. `net.ipv4.tcp_syn_retries` is 6 here, so such a connect gives up after about two minutes | Pass |
+| `an_address_that_never_answers_doesnt_hold_up_the_next` (a refused port, the full listener, then a live listener) and `the_families_take_turns` (`engine/src/net/mod.rs`) | Pass: the net module's 11 tests in 0.45 s. With `ATTEMPT_DELAY` set to an hour for one run, which tries the addresses one after another as before, the first test fails at its 5 s limit ("the live address answers within the limit") | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged; 11:24–11:27) | exit 0; 1,547 passed, 0 failed, 99 ignored; formatting and Clippy clean; lettre's four warnings as before; `tools/test_licenses.py` 8 passed | Pass |
+| A real host whose IPv6 route drops packets | Not run: no such network here | Not verified |
+
+### 1.0.4 — 2026-10-25
+
+The release with imap-proto's nesting limit (the entry below) and [GHSA-wv8g-4592-g5r2](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-wv8g-4592-g5r2). This machine. The release commit is `749bb21`: `d58a74f` with the advisory's link added to the CHANGELOG once the advisory had its ID, nothing else changed (`git diff d58a74f 749bb21`: one line of `CHANGELOG.md`). CI ran on `d58a74f`; the package was built and install-tested on both.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI on the release commit `d58a74f`, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui`, first run (13:14–13:16) | exit 101 in the engine's unit tests (229 passed, 2 failed), before the UI part: `updates::tests::nothing_listening` got `Ok(0.6.0)` and `reads_the_latest_tag_and_sends_nothing_about_the_user` got `Err(Offline)`. `nothing_listening` binds a port, frees it and connects to it, and the other test's server, running at the same time, was given that port, so each got the other's answer. `engine/src/updates.rs` is unchanged since Check for Updates was built. Log: `.local/ci-ui-1.0.4-2026-10-25-run1.log` | Failed: a race between two tests, not the release |
+| The same, second run (13:16–13:33) | exit 0; 1,545 passed, 0 failed, 99 ignored; 84 scripts, 8,135 of 8,135 steps; the hostile suite clean (60 cases, `dns=production=0 control=11`, `glib_criticals=0`, 272 s); no `gtk4-broadwayd` left. Log: `.local/ci-ui-1.0.4-2026-10-25.log` | Pass |
+| `tools/release.py build` on `v1.0.4` at `d58a74f` (tagged locally, not pushed; 13:34–13:38) | makepkg's `check()`: 1,110 passed, 0 failed, 91 ignored; `SHA256SUMS` checks for all four files; the binary says `sealwax 1.0.4` and holds no home-folder path; both license files are in the package, imap-proto 0.17.0 listed; the source tarball carries `vendor/imap-proto/` with the limit. Package SHA-256 `f3ed7817…a9a3` | Pass |
+| The clean-container install test on that package (`tools/install-test.sh`, 13:38–13:39) | pacman installed it with every dependency, no library missing; both license files; `install-smoke` 16/16 with the installed binary, its web process in WebKit's sandbox (`.local/install-test/20261025-133853`) | Pass |
+| `tools/release.py build` again on `v1.0.4`, moved to `749bb21` (still local; 14:16–14:22) | `check()`: 1,110 passed, 0 failed, 91 ignored; `SHA256SUMS` checks for all four files; the binary says `sealwax 1.0.4`, holds no home-folder path, and is byte for byte the first build's; of the package's files only `.BUILDINFO`, `.MTREE` and `.PKGINFO` differ. Package SHA-256 `1af2ff5d…61f4` (`.local/release/1.0.4/`; the first one kept in `.local/release/1.0.4-first-d58a74f/`) | Pass |
+| The clean-container install test on the rebuilt package (14:22–14:23) | The same: every dependency, no library missing, both license files, `install-smoke` 16/16, the web process in WebKit's sandbox (`.local/install-test/20261025-142258`) | Pass |
+| The push range (`4778b79..7f80c28`, 3 commits, 50 files, 34 of them `vendor/imap-proto/`) scanned before pushing | No working doc, home path, hostname or client ID; the only addresses are the commit author and imap-proto's own test fixtures (`example.com`, RFC sample addresses) | Pass |
+| The release [v1.0.4](https://github.com/PixDevsApps/sealwax/releases/tag/v1.0.4) (`main` and `v1.0.4` pushed, then `tools/release.py github` from the tagged commit, 13:25:58 UTC) | Not a draft or pre-release; GitHub's latest; its five files; the notes link the advisory; `releases/latest/download/…` and `releases/download/v1.0.4/…` both give the build's package (SHA-256 `1af2ff5d…`), and the published `SHA256SUMS` is the local one | Pass |
+| [GHSA-wv8g-4592-g5r2](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-wv8g-4592-g5r2) | Ecosystem set to Other (affected `<= 1.0.3`, patched `1.0.4`, medium, CWE-674 unchanged); a CVE requested (202 Accepted); published 13:27:04 UTC; the page answers 200 without signing in. No CVE ID yet | Pass |
+| Installed here | Not yet | Not verified |
+
+### imap-proto's nesting limit — 2026-10-25
+
+[ADR-006 amendment](DECISIONS.md#adr-006-amendment--imap-proto-vendored-with-a-nesting-limit-2026-10-25). This machine; scripted IMAP servers on localhost and imap-proto on its own; no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| imap-proto 0.17.0 as published, a BODYSTRUCTURE nested `depth` deep parsed on a thread with a 2 MiB stack, release build | Bare `(`: 372 crash ("has overflowed its stack"), 370 parse; nested multiparts as a server writes them: 369 parse, 371 crash; nested message/rfc822: 536 parse, 538 crash; a debug build crashes at 60. Through async-imap on a two-worker runtime like the engine's: "fatal runtime error: stack overflow, aborting", exit 134 | Found |
+| `vendor/imap-proto/` against the published crate | The `.crate`'s SHA-256 is the old lock entry's checksum (`5ccf963d…`); `diff -r` differs only in `src/rfc3501/body_structure.rs`, where upstream's `f06dc5a0` applies cleanly and `b93964df` does without its `src/tests.rs` hunk | Pass |
+| imap-proto's own tests, outside the repository | 0.17.0: 92 passed; with both commits: 97 passed, 0 failed (the five new ones: the two limits, and 10,000-deep multiparts, messages and extensions) | Pass |
+| `a_greeting_nested_too_deep_is_unreadable_not_a_crash` (a STARTTLS port whose greeting is 10,000 `(` deep) and `a_body_structure_nested_too_deep_costs_one_reconnect` (a message nested 10,000 deep, all three fake-server flavours) | Pass with the vendored copy: `Unreadable("the greeting")`, nothing sent; the message costs one reconnect and arrives without its BODYSTRUCTURE. Against the published 0.17.0 (the patch pointed at it for the run): both test processes end with "fatal runtime error: stack overflow" (SIGABRT) | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged; 11:00–11:03) | exit 0; 1,545 passed, 0 failed, 99 ignored; formatting and Clippy clean (the first run stopped at rustfmt's layout of the new test, fixed); no warning from imap-proto, lettre's four as before; `tools/test_licenses.py` 8 passed | Pass |
+| `CARGO_TARGET_DIR=target/fuzz cargo check --manifest-path fuzz/Cargo.toml --locked` | Builds with the vendored copy | Pass |
+| `python3 tools/licenses.py --offline` | imap-proto 0.17.0 listed as `[vendor/imap-proto in Sealwax's source]`, with its `LICENSE-MIT` | Pass |
+| Whether Dovecot or Stalwart pass a deeply nested message on in its BODYSTRUCTURE | Not run: starting the Docker testbed was refused in this session | Not verified |
+
+### 1.0.3 — 2026-10-24
+
+The security release: [GHSA-vhrm-52f2-v9v3](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-vhrm-52f2-v9v3) and [GHSA-chx5-p5h3-52m5](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-chx5-p5h3-52m5). This machine.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI on the release commit `62aa066`, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui` (21:21–21:36) | exit 0; 1,543 passed, 0 failed, 99 ignored; 84 scripts, 8,135 of 8,135 steps; the hostile suite clean (60 cases, `dns=production=0 control=11`, `glib_criticals=0`, 272 s); no `gtk4-broadwayd` left. Log: `.local/ci-ui-1.0.3-2026-10-24.log` | Pass |
+| `tools/release.py build` on `v1.0.3` (tagged locally first, pushed after the build and the install test; 21:37–21:41) | makepkg's `check()`: 1,108 passed, 0 failed, 91 ignored; `SHA256SUMS` checks for all four files; the binary says `sealwax 1.0.3` and holds no home-folder path. The package's `.BUILDINFO` names makepkg's `builddir` and `startdir` under the home folder, as 1.0.2's published package does; both license files are in the package | Pass |
+| The clean-container install test on the release package (`tools/install-test.sh`, 21:41–21:42) | pacman installed it with every dependency; both license files; `install-smoke` 16/16 with the installed binary, its web process in WebKit's sandbox (`.local/install-test/20261024-214137`) | Pass |
+| The push range (`a505a3d..62aa066`, 6 commits) scanned before pushing | No working doc, home path or client ID; the only addresses are the commit author and the live check's dummy `test@outlook.com` | Pass |
+| The release [v1.0.3](https://github.com/PixDevsApps/sealwax/releases/tag/v1.0.3) | Not a draft or pre-release; GitHub's latest; its five files; `releases/latest/download/…` and `releases/download/v1.0.3/…` both give the build's package (SHA-256 `0a80037c…`) | Pass |
+| The two advisories | Accepted, affected `<= 1.0.2`, patched `1.0.3`, GHSA-chx5 widened to the quadratic parse (CWE-770, CWE-407), credit to `fieldsfury` (shown once accepted), CVE IDs requested, published 19:44:03 UTC; both pages answer 200 without signing in | Pass |
+| lettre told first | The same faults reported to lettre privately through GitHub before the push | Done |
+| Installed here | Not yet: the owner's, with INSTALL.md's command | Not verified |
+
+### Microsoft access tokens only to Microsoft's servers (GHSA-vhrm-52f2-v9v3) — 2026-10-24
+
+[ADR-008 amendment](DECISIONS.md#adr-008-amendment--an-access-token-goes-only-to-microsofts-servers-2026-10-24). This machine; the fake Microsoft and scripted IMAP and SMTP servers on 127.0.0.1; no real account, and no live reproduction (it needs a Microsoft 365 tenant on a custom domain whose DNS answer can be changed).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| The report's chain, read in the code at `a18d9da` (the files are unchanged since 1.0.1 `b84e066`) | Holds as reported: per-protocol detection with SRV above MxPreset; OAuth chosen from the IMAP host; the server card shown on the password step only; the token checked on the presets with `sign_in.servers` `None` in the app; `Kept` without servers; the add storing `found.smtp`; `connect_oauth` to `settings.smtp`. The IMAP side is safe, since only presets set the OAuth hint and their IMAP hosts are Microsoft's; POP3 and the password check refuse OAuth | Confirmed |
+| `oauth::tests::a_token_goes_only_to_microsofts_servers` | Microsoft's four preset hosts (and one in capitals with a trailing dot) take a token. `smtp.example.test`, `office365.com.example.test`, `notoutlook.com`, `outlook.co`, `127.0.0.1`, `localhost` and an empty host don't, under the platform trust. Under the testbed CA alone, `127.0.0.1` does, unless pinned | Pass |
+| `smtp::submit::tests::a_token_goes_to_no_smtp_server_but_microsofts` | `connect_oauth` to a non-Microsoft server under the platform trust is `Connect(Other)`: no token fetched, and nothing connected to the listener within 200 ms. Without the guard it fails (the assertion on the result, after 5 s) | Pass |
+| `engine/tests/sign_in.rs` `an_add_takes_the_servers_its_sign_in_was_checked_on` | An add naming two other scripted servers (which accept the fake Microsoft's tokens) and POP3 stores the checked IMAP and SMTP servers and IMAP, and syncs through the checked IMAP server (2 logins there: the check and the sync). The other servers saw no login. Without the server override the account synced through the other IMAP server, so the token went to it, and stored it (the test fails); without any override, POP3's refusal of OAuth fails the sync | Pass |
+| `cargo test -p sealwax-engine --test sign_in` | 8 passed | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged, and its self-tests check the commands it sends, which are the same) | The first run failed on formatting only (rustfmt's layout of one `if`); after `cargo fmt`, exit 0: 1,543 passed, 0 failed, 99 ignored; Clippy clean; lettre's four dead-code warnings | Pass |
+| Live, `cargo run -p sealwax-engine --example oauth_live -- test@outlook.com` on `49be097`, the owner's Microsoft test account (the owner's authorization of 2026-10-24; a dummy address, which only picks the Outlook.com preset; the platform trust) | Run 1: the page opened, but no sign-in came back within 300 s, so `Imap Timeout`, nothing exchanged, the clean-up done. Run 2: browser sign-in in 5.3 s (Microsoft named it a work or school account, `consumer=false`; IMAP and SMTP scopes). The guard let the token through to `outlook.office365.com` and `smtp-mail.outlook.com`, and both took it. Added; first sync in 1.6 s (2 INBOX headers; the removal counted 11 folders and 6 messages; the runner's "folders listed" said 0, as on 2026-10-13). After a restart, a refresh from the keyring with a rotated refresh token, and a sync in 2.0 s. Removed; 0 keyring items under the test app-id; scratch folders deleted; "live check passed". Nothing sent; sending's guard is the same rule, held by the unit test | Pass |
+| A Microsoft account stored with a non-Microsoft server by an earlier version | Refused before any token is fetched, by the guard. The notice is the generic "Other"; not looked at in the app | Not verified |
+
+### lettre's reply reading bounded — 2026-10-24
+
+[ADR-015 amendment](DECISIONS.md#adr-015-amendment--lettres-reply-reading-bounded-2026-10-24). This machine; scripted SMTP servers over TLS on localhost and a comparison program outside the repository; no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| A reply line that never ends, before the change (the test server's byte count, `quick()`'s 0.5 s data timeout) | lettre kept reading until the timeout: the server had sent 80.7 MB (its last 1 MiB mark, 80,740,352 bytes) when the client gave up with `NoReply` | Found |
+| The same, after | `UnreadableReply` after at most 16,385 bytes; the server had sent 516,096 bytes when the client closed | Pass |
+| A reply of many short lines (`250-x` each) at the end of data, before the change, debug build, a 120 s data timeout | 1,000 lines 1.4 s; 4,000 lines 22.6 s; 16,000 lines (112,006 bytes) 268 s, then "too large". The timeout never fired | Found |
+| The same with a first, naive fix (skip parsing while every line read is a continuation line) and a first line `250-a\n` | Read as `Ok` after 605.8 s for the test's three cases; so the timing check below | Found |
+| `cargo test -p sealwax-engine --lib smtp::submit` after | 18 passed. New: a line that never ends at the message's end (`UnreadableReply`, connection dropped) and in the greeting (`Connect(Other)`, not `Timeout`); 14,000 lines with and without a bare-LF first line read in 89.8 and 91.4 ms, 16,000 lines "too large" in 57.7 ms (the test allows 20 s); a multi-line refusal and a reply with mixed codes in the end-of-data table. Against unpatched lettre the endless-line test fails (`NoReply` for `UnreadableReply`) | Pass |
+| The log-capturing test beside the new ones | Failed 3 times in 6 runs once the new tests ran next to it (8 out of 8 passed without them). The cause, read in tracing-core 0.1.36's source: with only one dispatcher ever registered, a new callsite's interest is taken from the registering thread's subscriber alone. With a second dispatcher in the test, 12 out of 12 runs passed | Pass |
+| Old and new reading compared outside the repository (lettre's own `response.rs`, nom 8.0.0, both loops over the same bytes): 2,000,000 random replies from 27 tokens (codes, digits, `-`, space, CRLF, bare LF and CR, `é`, tab) plus 26 at the limits (lines of 16,382–20,000 bytes, 14,284–14,300 lines, invalid UTF-8) | No difference: 109,667 replies read, 250,417 incomplete, 1,639,924 parse errors, 9 lines too long, 7 too large, 2 encoding errors. One built case differs as expected: a 17,000-byte line ending in `\xff` is "line too long" now and an encoding error before | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged) | exit 0; 1,540 passed, 0 failed, 99 ignored; formatting and Clippy clean; lettre's four dead-code warnings | Pass |
+| `rustfmt --edition 2024 --check` on the three changed lettre files; `cargo check --manifest-path fuzz/Cargo.toml --locked` | Clean; builds | Pass |
+| A release build's timing of the many-lines case (2026-10-24, later: the comparison program in release, opt-level 3, no debug assertions; AMD Ryzen 9 5900X; in memory, no network; two runs) | Before: 4,000 lines 0.25 s; 14,284 lines (99,996 bytes) 3.06–3.08 s; 16,666 lines of `250-` ("too large") 4.09–4.13 s. After: 0.43–0.45 ms, 1.5–1.6 ms, 0.67–0.74 ms | Measured |
+| The same patterns in IMAP and POP3 reading | Not looked at | Not verified |
+
+### 1.0.2 — 2026-10-24
+
+The release with issue #22's fix. This machine.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI on the release commit `a505a3d`, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui` | exit 0; 1,538 passed, 0 failed; 84 scripts, 8,135 steps; the hostile suite clean (60 cases, `dns=production=0 control=11`, `glib_criticals=0`, 273 s); no `gtk4-broadwayd` left. Log: `.local/ci-ui-1.0.2-2026-10-24.log` | Pass |
+| The fix's test (`only_absolute_web_and_mail_links_open`) with the old flag, `UriFlags::NONE` | Fails with the nested `url=` decoded, as the issue showed; passes with `UriFlags::ENCODED` | Pass |
+| `tools/release.py build` on `v1.0.2` | makepkg's `check()`: 1,103 passed, 0 failed; the binary says `sealwax 1.0.2` and holds no home-folder path; `THIRD-PARTY-LICENSES.txt` in the package and beside it | Pass |
+| The clean-container install test on the release package (`tools/install-test.sh`, 00:38) | pacman installed it with every dependency; both license files; `install-smoke` 16/16 with the installed binary, its web process in WebKit's sandbox | Pass |
+| The push range (`b84e066..a505a3d`, 3 commits) scanned before pushing | No personal address beyond the commit author, no home path or client ID; no working doc | Pass |
+| The release [v1.0.2](https://github.com/PixDevsApps/sealwax/releases/tag/v1.0.2) | Not a draft or pre-release; GitHub's latest; its five files; `releases/latest/download/…` and `releases/download/v1.0.2/…` both give the build's package (SHA-256 `87e0be69…4252`) | Pass |
+| A tracking link clicked in the reader on a live desktop | Not run: no such message here and no live-window run; unit test only | Not verified |
+| Installed here | Not yet: the owner's, with INSTALL.md's command | Not verified |
+
+### 1.0.1 — 2026-10-23
+
+The release with issue #21's notice. This machine.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI on the release commit `b84e066`, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui` | exit 0; 1,538 passed, 0 failed; 84 scripts, 8,135 steps; the hostile suite clean (60 cases, `dns=production=0 control=11`, `glib_criticals=0`, 273 s); no `gtk4-broadwayd` left. Log: `.local/ci-ui-1.0.1-2026-10-23.log` | Pass |
+| `tools/release.py build` on `v1.0.1` | makepkg's `check()`: 1,103 passed, 0 failed; the binary says `sealwax 1.0.1` and holds no home-folder path; `THIRD-PARTY-LICENSES.txt` in the package and beside it | Pass |
+| The clean-container install test on the release package (`tools/install-test.sh`, 10:47) | pacman installed it with every dependency; both license files; `install-smoke` 16/16 with the installed binary, its web process in WebKit's sandbox | Pass |
+| The push range (`d45dcce..b84e066`, 2 commits) scanned before pushing | No personal address beyond the commit author, no home path or client ID; no working doc | Pass |
+| The release [v1.0.1](https://github.com/PixDevsApps/sealwax/releases/tag/v1.0.1) | Not a draft or pre-release; GitHub's latest; its five files; `releases/latest/download/…` and `releases/download/v1.0.1/…` both give the build's package (SHA-256 `8471dc12…90bc`) | Pass |
+| Microsoft 365 with SMTP AUTH turned off, live | Not run: no such account; scripted only (`a_token_refused_because_smtp_auth_is_off_says_so`) | Not verified |
+| Installed here | Not yet: the owner's, with INSTALL.md's command | Not verified |
+
+### 1.0.0 — 2026-10-22
+
+The release. This machine.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI on the release commit `0840ebe`, `SEALWAX_CI_DISPLAY=80 bash tools/ci.sh --ui` | exit 0; 1,537 passed, 0 failed, 99 ignored; 84 scripts, 8,135 of 8,135 steps; the hostile suite clean (60 cases, `dns=production=0 control=11`, `glib_criticals=0`, 272 s). Log: `.local/ci-ui-1.0.0-2026-10-22.log` | Pass |
+| `tools/release.py build` on `v1.0.0` | makepkg's `check()`: 1,102 passed, 0 failed; the binary says `sealwax 1.0.0` and holds no home-folder path; `THIRD-PARTY-LICENSES.txt` in the package and beside it | Pass |
+| The clean-container install test on the release package (`tools/install-test.sh`, 22:27) | pacman installed it with every dependency; both license files; `install-smoke` 16/16 with the installed binary, its web process in WebKit's sandbox | Pass |
+| The push range (`503c01a..0840ebe`, 14 commits) scanned before pushing | No personal address beyond the commit author, no home path (the install test's `/home/tester` is the container's) or client ID; no working doc | Pass |
+| The release [v1.0.0](https://github.com/PixDevsApps/sealwax/releases/tag/v1.0.0) | Not a draft or pre-release; GitHub's latest; its five files (the package twice, the tarball, `SHA256SUMS`, `THIRD-PARTY-LICENSES.txt`); `releases/latest/download/…` and `releases/download/v1.0.0/…` both give the build's package (SHA-256 `f6c98d2d…a93b`) | Pass |
+| Installed here | Not yet: the owner's, with INSTALL.md's command (the first candidate is installed) | Not verified |
+
+
 ### Memory with screenshot-heavy mail (the owner's C17) — 2026-10-22
 
 From the owner's C17 (272 → 538 MiB over a day of mail with large screenshots; at the end the app 264.9 MiB and the reader's web process 269.5 MiB PSS, 188.5 MiB of it WebKit's allocator, `WKFastMalloc`). A scratch mailbox of 30 messages, each with three 3440×1440 PNG screenshots inline (`cid:`; fictional, made from the self-tests' screenshots, 46 MiB raw, `sealwax-fixtures import --dir`), opened one after another in six rounds, the tree's PSS after each round and after 35 s idle (a throwaway self-test, kept in `.local/live/perf-2026-10-21/shots.sealwax-test`). Release build.

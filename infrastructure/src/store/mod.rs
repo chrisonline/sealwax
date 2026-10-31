@@ -19,7 +19,9 @@ mod overlay;
 mod pop3_api;
 mod reader;
 mod schema;
+mod senders;
 mod sync_api;
+mod unsubscribe;
 mod views;
 mod writer;
 
@@ -80,7 +82,9 @@ pub use folders_api::*;
 pub use ops_api::*;
 pub use pop3_api::*;
 pub use schema::VERSION as SCHEMA_VERSION;
+pub use senders::{GroupMail, GroupMessage, MAX_GROUPS, SenderGroup};
 pub use sync_api::*;
+pub use unsubscribe::UnsubscribeTarget;
 pub use views::ViewHandle;
 
 use crate::blobs::BlobStore;

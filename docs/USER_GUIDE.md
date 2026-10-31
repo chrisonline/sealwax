@@ -133,7 +133,7 @@ What a POP3 account does:
 - **On the server.** By default, downloaded mail stays on the server and Sealwax never deletes it there. To change that, edit the account's `[account.pop3]` table in `accounts.toml`: `delete_after_days = 30` deletes a message there 30 days after it was downloaded (1 to 3650 days), and `leave_on_server = false` deletes each message there as soon as it is downloaded.
 - **Checking.** Sealwax checks a POP3 server when it starts, every 5 minutes, after a reconnect and when you press Refresh (F5 or Ctrl+Alt+R). It downloads the newest mail first. The first download of an account sends no notifications.
 - **Read and unread** are kept by Sealwax on this computer: POP3 can't tell the server.
-- **A message over 100 MiB** isn't downloaded: it stays on the server and its row shows only its header.
+- **A message over 100 MiB** isn't downloaded: it stays on the server and its row shows only its header. So does one that turns out more than twice as large as the server said.
 - **Copies of your sent mail and your drafts** are kept in the local folders, not on the server.
 - **The server must support UIDL.** Without it the assistant says "This POP3 server can't keep track of messages": use IMAP if the provider offers it. "The mailbox is busy" means another mail app is downloading from the same mailbox, or the server wants a pause between sign-ins.
 - **Removing a POP3 account** deletes its local folders for good, with its sent mail, its drafts and any mail the server no longer has.
@@ -168,7 +168,7 @@ The layout follows the window's width, so it works tiled:
 
 On Hyprland the window has no title bar; on other desktops the window controls sit at the ends of the pane bars.
 
-**Account status.** Each account's heading has its name (the account name you gave it, else its address), a dot and a word: synced, syncing…, offline, mailbox full, needs sign-in or bad certificate. An account with a colour shows its name and its synced dot in that colour; a dot that warns stays the warning's colour. A state that needs you shows as a **banner** across the top of the window, the most important first: no keyring, a certificate that no longer verifies, a sign-in or password needed, a message that may have been sent, a full mailbox, offline. Short results (archived, sent, saved) show as **toasts** at the bottom.
+**Account status.** Each account's heading has its name (the account name you gave it, else its address), a dot and a word: synced, syncing…, offline, sending off, mailbox full, needs sign-in, needs adding again or bad certificate. An account with a colour shows its name and its synced dot in that colour; a dot that warns stays the warning's colour. A state that needs you shows as a **banner** across the top of the window, the most important first: no keyring, a certificate that no longer verifies, a sign-in or password needed, an account to add again, sending turned off, a message that may have been sent, a full mailbox, offline. Short results (archived, sent, saved) show as **toasts** at the bottom.
 
 **What syncs.** Sealwax keeps a copy of your mail on this computer, so the list shows at once and works offline. New mail in the Inbox arrives as soon as the server reports it (IMAP IDLE); the account's other folders are checked every couple of minutes, and **Refresh** (F5, Ctrl+Alt+R or the main menu) checks every account now. A folder's first sync keeps its last 90 days of mail (at least 200 messages, at most 5,000); scroll to the end of the list to load older messages, 200 at a time ("Loading older messages…"). Inbox, Sent, Drafts, Archive, Junk and Trash sync by themselves; another folder syncs once you have opened it. The unread counts are the server's, including mail older than what the list holds.
 
@@ -194,6 +194,26 @@ Allowed images load only over HTTPS and without cookies. A forged From address c
 **Print, Show Original, Save as .eml.** **Print…** (Ctrl+P) opens the print dialog with the message and a header (subject, From, To, Cc, Date). **Show Original** (Ctrl+U) shows the message's raw source (its first 512 KiB) with **Save as .eml…**. **Save as .eml…** (Ctrl+S) saves the whole message as a file, suggesting its subject as the name.
 
 **Encrypted and signed mail.** Sealwax 1.0 doesn't decrypt or check PGP and S/MIME. An encrypted message shows "This message is encrypted. Sealwax can't read encrypted mail yet." in place of its body; a signed message shows its content with "Signed · not checked".
+
+## Grouping mail by sender or domain
+
+**Group by Sender** and **Group by Domain** (in the command palette) show the folder, or All Inboxes, as one row per sender, or per domain, newest first: the sender's name, their address or domain, how many messages and how many unread, and the newest subject. Grouping by domain counts `news@shop.example` and `orders@mail.shop.example` as `shop.example`. The chips work on the groups too: Unread shows only the senders with unread mail. **Don't Group** goes back to the plain list, and Sealwax remembers your choice for the next start.
+
+Open a row with Enter or a double click to see that sender's mail as a list, with the reader beside it; the search field shows what it found it with (`sender:news@shop.example` or `domain:shop.example`), which you can also type yourself. Escape goes back to the groups. From All Inboxes, an opened group shows that sender's mail in every folder but Trash and Junk.
+
+**Acting on a whole group.** Select a row (click it, or move to it with the arrow keys) and the mail commands act on all of that sender's mail in what the list shows: Archive (`e`), Delete (`#`), Move to Junk (`!`), Move to… (`v`), Star (`s`), Mark as Read (`Shift+I`) and Mark as Unread (`Shift+U`), from their keys, the toolbar, the palette or the buttons the reader shows for the group. With a chip on, only the mail it shows: with Unread, Archive takes the sender's unread mail and leaves the rest. Undo brings it back, as for messages, and the selection goes on to the next sender. **Unsubscribe…** on a group leaves the sender's list, and its dialog can archive or delete their messages here at the same time ("Their 12 messages here: Keep, Archive or Delete").
+
+## Unsubscribing
+
+Newsletters and other mailing lists usually say how to leave them in a hidden header (List-Unsubscribe). For such a message, the reader shows an **Unsubscribe** link in the message's header, beside the date; **Unsubscribe…** is also in the message's right-click menu, the reader's ⋮ menu and the command palette. `is:subscription` finds all such mail: search for it, select the results (click the first and Shift+click the last) and choose Unsubscribe… once for all of them.
+
+A dialog lists each sender once, with how Sealwax will unsubscribe, and nothing happens until you choose **Unsubscribe**:
+
+- **One click:** the sender asked for it (RFC 8058), so Sealwax tells the sender's web server directly, naming the server in the dialog. The request carries nothing about you but the address in the link the sender gave.
+- **By email:** Sealwax sends the short message the sender asked for, from the account the newsletter came to. It waits in the outbox for a few seconds, so Undo works as for any message you send.
+- **On the sender's page:** the sender only offers a web page. **Open Page** opens it in your browser; finish there.
+
+A toast says how it went. Sealwax remembers whom you unsubscribed from, and the dialog says so if their mail keeps coming. Mail you already have stays where it is; a sender may take a few days to stop. A sender can't tell you opened the dialog: Sealwax contacts nobody until you choose Unsubscribe or Open Page.
 
 ## Triage: archive, delete, move, undo
 
@@ -307,10 +327,13 @@ Press `/` or Ctrl+F (or click the search field) and type: the results follow eve
 | Operator | Finds | Example |
 | --- | --- | --- |
 | `from:` | The sender's name or address | `from:anna` |
+| `sender:` | Mail from exactly this address | `sender:news@shop.example` |
+| `domain:` | Mail from this domain or any of its subdomains | `domain:shop.example` |
 | `to:` | A recipient's name or address | `to:team@example.com` |
 | `subject:` | Words in the subject | `subject:invoice` |
 | `has:attachment` | Messages with attachments | `has:attachment` |
 | `is:unread`, `is:read`, `is:starred` | Unread, read or starred messages | `is:unread` |
+| `is:subscription` | Newsletters and other mail you can unsubscribe from | `is:subscription` |
 | `before:` | Sent before a day | `before:2026-10-01` |
 | `after:` | Sent on or after a day | `after:2026-09-01` |
 
@@ -395,6 +418,7 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | Messages | Print… | Ctrl+P | list and reader | `print` |
 | Messages | Show Original | Ctrl+U | list and reader | `show-original` |
 | Messages | Save as .eml… | Ctrl+S | list and reader | `save-message` |
+| Messages | Unsubscribe… | — |  | `unsubscribe` |
 | Compose | Compose | c, Ctrl+N | c: list and reader; Ctrl+N: anywhere | `compose` |
 | Compose | Reply | r, Ctrl+R | list and reader | `reply` |
 | Compose | Reply All | a, Ctrl+Shift+R | list and reader | `reply-all` |
@@ -429,6 +453,9 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | View | Refresh | Ctrl+Alt+R, F5 | anywhere | `refresh` |
 | View | Toggle Sidebar | Ctrl+Shift+S, F9 | anywhere | `toggle-sidebar` |
 | View | Command Palette | Ctrl+Shift+P, F1 | anywhere | `command-palette` |
+| View | Group by Sender | — |  | `group-by-sender` |
+| View | Group by Domain | — |  | `group-by-domain` |
+| View | Don't Group | — |  | `dont-group` |
 | General | Add Account | — |  | `add-account` |
 | General | Edit Account | — |  | `edit-account` |
 | General | Remove Account | — |  | `remove-account` |
@@ -634,7 +661,7 @@ Sealwax writes a plain-text log of what it does, never with message content, add
   systemctl --user unset-environment RUST_LOG
   ```
   This route is not tried yet. The protocol libraries stay at warnings whatever `RUST_LOG` says, so a debug log carries no protocol traces.
-- **A development build** runs in the terminal and logs there ([INSTALL.md](../INSTALL.md#for-developers-build-from-source), which says how to keep it away from your real mail).
+- **A development build** runs in the terminal and logs there, and keeps its own folders (`sealwax-devel` in place of `sealwax`), away from your real mail ([INSTALL.md](../INSTALL.md#for-developers-build-from-source)).
 
 ### Where Sealwax keeps things
 
@@ -663,6 +690,8 @@ The folders follow `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG
 - **"…'s mailbox is full"** The server has no room: new mail may bounce and changes can't be saved there. Delete mail you don't need, or ask your provider for more space.
 - **"Microsoft sign-in isn't available in this build of Sealwax yet."** Set a client ID ([above](#outlookcom-hotmail-and-microsoft-365-sign-in-with-microsoft)).
 - **"Still waiting for Microsoft."** The browser didn't come back from Microsoft's sign-in page. If it shows "Need admin approval", your organization must approve Sealwax first ([above](#work-or-school-microsoft-accounts)); otherwise finish signing in there, or **Open the sign-in page again**. Sealwax stops waiting after 5 minutes.
+- **"Sending is turned off for this account"** Microsoft 365 turned off SMTP AUTH, the way mail apps send, for your mailbox or your whole organization; Microsoft does this by default for many organizations. Sealwax can't add an account it can't send from. Ask your IT admin to turn on SMTP AUTH (Microsoft calls it "Authenticated SMTP") for your mailbox, then sign in again. If it is turned off after you added the account, the account says "sending off" and a banner says "Sending is turned off for" the account: your messages wait in the outbox, and Sealwax sends them once the admin turns it on.
+- **"<account> must be added again"** or **"This account's server isn't Microsoft's"** A Microsoft account added with Sealwax 1.0.2 or earlier can have a server saved that isn't one of Microsoft's, and Sealwax gives your Microsoft sign-in only to Microsoft's servers, so the account doesn't connect. Remove it (Remove Account) and add it again: Sealwax then uses the servers your sign-in is checked on.
 - **"A message may have been sent"** See [Sending](#writing-mail).
 - **A message is in your webmail but not in Sealwax.** If the server's description of a message is one Sealwax can't read, Sealwax leaves that message out so the rest of the folder and new mail still arrive; the log says "a message's headers couldn't be read". Read that message in your webmail. Sealwax tries it again the next time it starts.
 - **Old mail is missing.** The first sync keeps the last 90 days of each folder; scroll to the end of the list to load older mail.

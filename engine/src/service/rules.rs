@@ -780,6 +780,7 @@ mod tests {
                 has_attachments: false,
                 thread_count: 1,
                 labels: Vec::new(),
+                subscription: false,
             },
             headers: Headers {
                 from: vec![Address::new("Kari", "kari@example.test")],
