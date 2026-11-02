@@ -153,7 +153,7 @@ What a POP3 account does:
 Three panes, left to right:
 
 - **The sidebar:** **New message** at the top; **All Inboxes**; each account with its Inbox, Drafts, Sent, Archive, Junk and Trash and their unread counts, its other folders under **More folders** (other mail programs' housekeeping folders are left out: Outlook's Sync Issues and, on Outlook.com and Microsoft 365, Notes and Outbox; Mailspring's folder while it is empty); at the bottom a summary of the accounts and a button that opens `config.toml`. Click an account's heading (or press Enter, Space, Left or Right on it) to fold its folders away under it; folded, the heading shows the account's unread count. Sealwax remembers which accounts are folded, and the view you last had: a new window opens on it, All Inboxes or a folder, as long as it still exists. Subfolders show indented under their folder by their own name, the Inbox's under the Inbox; a folder with subfolders has an arrow that folds them away (or press Left on it, and Right to open them again); folded, its count adds the unread mail in its subfolders to its own, so none goes unseen, and opened again each folder counts its own. Sealwax remembers the folds too, as it remembers whether **More folders** is open: the sidebar comes back as you left it, also after you rename a folder ([Folders](#folders-new-rename-delete)).
-- **The message list:** the search field, the filter chips **All**, **Unread**, **Starred** and **Attachments**, then the messages in sections: Today, Yesterday, This week, This month, Older. A row shows the sender, the time, the subject, a two-line preview, and marks for unread, starred, attachments and the size of the conversation. The **main menu** button is at the end of the list's bar.
+- **The message list:** the search field, the filter chips **All**, **Unread**, **Starred** and **Attachments**, then the messages in sections: Today, Yesterday, This week, This month, Older (in an Inbox, [Pinned](#pinned-senders) first when you have pinned senders). A row shows the sender, the time, the subject, a two-line preview, and marks for unread, starred, attachments and the size of the conversation. The **main menu** button is at the end of the list's bar.
 - **The reader:** the selected message's conversation ([Reading mail](#reading-mail)).
 
 The layout follows the window's width, so it works tiled:
@@ -178,7 +178,7 @@ On Hyprland the window has no title bar; on other desktops the window controls s
 
 **Conversations.** Selecting a message shows its whole conversation in the reader, oldest first; set `conversation_order = "newest-first"` under `[reader]` in `config.toml` to have the latest message on top, with the quick reply above it. The selected message, unread ones and the latest are expanded as cards; the others are one-line rows that a click, Enter or Space expands. A conversation of over 100 messages folds its middle ("N earlier messages"). **Expand All Messages** and **Collapse All Messages** are in the reader's More menu and the palette. `n` and `p` move to the next and previous message in the conversation, down and up the screen. A message the reader shows is marked read. A card's details button shows From, Reply-To, To, Cc, the full date and the mailing list.
 
-**HTML mail.** No script in a message ever runs. Plain text and simple HTML take your theme's colours and fonts. A styled message, such as a newsletter or a receipt, keeps its own design on a light "paper" card, and a message with its own dark design shows it under a dark theme. When the design is a column narrower than the reader, the space beside it takes your theme's background instead.
+**HTML mail.** No script in a message ever runs. Plain text and simple HTML take your theme's colours and fonts. A styled message, such as a newsletter or a receipt, keeps its own design on a light "paper" card, and a message with its own dark design shows it under a dark theme. When the design is a column narrower than the reader, the space beside it takes your theme's background instead. To read styled mail in dark colours under a dark theme, set `dark_styled_mail = true` under `[appearance]` in `config.toml` ([Theme, fonts and corners](#theme-fonts-and-corners)).
 
 **Remote images.** Images and other content from the internet are hidden until you allow them, so a sender can't tell when or where you opened a message. Each message's banner says "Images are hidden so the sender can't tell you opened this.":
 
@@ -202,6 +202,20 @@ Allowed images load only over HTTPS and without cookies. A forged From address c
 Open a row with Enter or a double click to see that sender's mail as a list, with the reader beside it; the search field shows what it found it with (`sender:news@shop.example` or `domain:shop.example`), which you can also type yourself. Escape goes back to the groups. From All Inboxes, an opened group shows that sender's mail in every folder but Trash and Junk.
 
 **Acting on a whole group.** Select a row (click it, or move to it with the arrow keys) and the mail commands act on all of that sender's mail in what the list shows: Archive (`e`), Delete (`#`), Move to Junk (`!`), Move to… (`v`), Star (`s`), Mark as Read (`Shift+I`) and Mark as Unread (`Shift+U`), from their keys, the toolbar, the palette or the buttons the reader shows for the group. With a chip on, only the mail it shows: with Unread, Archive takes the sender's unread mail and leaves the rest. Undo brings it back, as for messages, and the selection goes on to the next sender. **Unsubscribe…** on a group leaves the sender's list, and its dialog can archive or delete their messages here at the same time ("Their 12 messages here: Keep, Archive or Delete").
+
+## Pinned senders
+
+Some mail mustn't get lost in the rest: a bill, a school, a club. **Pin Sender** keeps a sender's mail at the top of the Inbox, in a **Pinned** section above Today, and **Pin Domain** does it for everyone who writes from that domain (`trener@klatring.example` and `leder@post.klatring.example` are both `klatring.example`). Both are in the message's right-click menu, the reader's ⋮ menu and the command palette; on a group of Group by Sender or Domain they pin that group.
+
+A new pin lasts **until read**: an unread message from them waits at the top, and once you've read it, it goes back to its date. To keep their mail at the top whether you've read it or not, for as long as it's in the Inbox, choose **Keep Pinned** in the toast that comes after pinning, or **Always** in Pinned Senders…. Archive or delete a pinned message and it leaves the section like any other.
+
+- The section is in every Inbox and in All Inboxes, shows the newest 10 pinned messages, and follows the chips: with Unread, only the unread ones. A pinned sender's older mail stays in its date.
+- Every message from a pinned sender, in any folder or search, shows a pin beside the sender's name.
+- In **Group by Sender** or **Group by Domain**, the pinned senders or domains come first in the Inbox and All Inboxes, with a pin on their row, by the same rule: always, or while they have unread mail. A pinned domain also brings its senders first in Group by Sender, and a pinned sender brings its domain's group first in Group by Domain. **Unpin Sender** on a domain's group takes off the domain's pin and those of the senders in it.
+- **Unpin Sender** (the same menus, on one of their messages) takes the pin off, sender and domain; the toast's Undo puts it back.
+- **Pinned Senders…** in the main menu lists every pin, with how long its mail stays at the top (**Until read** or **Always**) and a button that unpins it.
+
+Pins are kept on this computer, for all accounts; your mail server and your other mail apps don't see them. To make a sender stand out on your phone too, a [rule](#rules) can star their mail.
 
 ## Unsubscribing
 
@@ -419,6 +433,9 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | Messages | Show Original | Ctrl+U | list and reader | `show-original` |
 | Messages | Save as .eml… | Ctrl+S | list and reader | `save-message` |
 | Messages | Unsubscribe… | — |  | `unsubscribe` |
+| Messages | Pin Sender | — |  | `pin-sender` |
+| Messages | Pin Domain | — |  | `pin-domain` |
+| Messages | Unpin Sender | — |  | `unpin-sender` |
 | Compose | Compose | c, Ctrl+N | c: list and reader; Ctrl+N: anywhere | `compose` |
 | Compose | Reply | r, Ctrl+R | list and reader | `reply` |
 | Compose | Reply All | a, Ctrl+Shift+R | list and reader | `reply-all` |
@@ -467,6 +484,7 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | General | Make Sealwax the Default Mail App… | — |  | `default-mail-app` |
 | General | Check for Updates… | — |  | `check-for-updates` |
 | General | Quit | Ctrl+Q | anywhere | `quit` |
+| General | Pinned Senders… | — |  | `pinned-senders` |
 | Rules | Rules… | — |  | `edit-rules` |
 | Rules | Create Rule from Message… | — |  | `new-rule-from-message` |
 | Rules | Always Junk Messages from Sender | — |  | `junk-sender` |
@@ -506,6 +524,7 @@ Sealwax follows your **live Omarchy theme**. Its colours come from the current t
 
 - **Corners** follow Hyprland's window rounding (`decoration:rounding`): square on a stock Omarchy, rounded where your Hyprland rounds windows. `corner_radius` in `config.toml` sets a number of pixels instead.
 - **Fonts:** `chrome_font = "sans"` puts the sidebar, list and toolbars in the sans-serif font; `reading_font = "mono"` puts message text in the monospace font.
+- **Dark styled mail:** newsletters, receipts and other mail with a design of its own keep it on a light card. `dark_styled_mail = true` shows them in dark colours when your theme is dark: light backgrounds turn dark, dark text turns light, colours keep their hue, and text stays readable against what's behind it. Images keep their colours, so a dark logo made for a white page can be hard to see. A message with its own dark design shows that one. A light theme keeps the light card. The change applies to an open message as soon as you save the file, and it's off unless you turn it on.
 - **Outside Omarchy** Sealwax uses one of two built-in palettes, light or dark, following the desktop's dark-style preference; corners follow Hyprland when it runs, and are square elsewhere unless `corner_radius` says otherwise.
 - **Avatars** are initials on a colour from the theme. Sealwax never fetches pictures (no Gravatar, BIMI or favicons).
 - **Account colours** are the one colour you choose rather than the theme: eight fixed, muted hues. Their lightness follows the theme, so an account's name reads as well on a light theme as on a dark one.

@@ -75,7 +75,7 @@ pub const COMMANDS: &[(&str, usize, usize)] = &[
     // A group row selected, not opened: the mail commands act on all of its mail (issue #25).
     ("list-select-group", 1, 1),
     ("assert-list-groups", 1, 1),
-    ("assert-list-group", 4, 4),
+    ("assert-list-group", 4, 5),
 ];
 
 thread_local! {
@@ -974,6 +974,12 @@ async fn check(harness: &Harness, assertion: &str, args: &[String]) -> StepResul
                 "starred" => row.flags.is_flagged().to_string(),
                 "attachment" => row.has_attachments.to_string(),
                 "threads" => row.thread_count.to_string(),
+                "pinned" => row.pinned.to_string(),
+                "pin-icon" => list
+                    .row_widget(position)
+                    .ok_or_else(|| format!("row {position} isn't bound"))?
+                    .shows_pin()
+                    .to_string(),
                 other => return Err(format!("no field {other}")),
             };
             equal(
@@ -1160,7 +1166,21 @@ async fn check(harness: &Harness, assertion: &str, args: &[String]) -> StepResul
                         None => Err(format!("no group {}", arg(0))),
                         Some(group) => equal("key", group.key.as_str(), arg(1))
                             .and_then(|()| equal("messages", group.count, number(arg(2))? as u32))
-                            .and_then(|()| equal("unread", group.unread, number(arg(3))? as u32)),
+                            .and_then(|()| equal("unread", group.unread, number(arg(3))? as u32))
+                            .and_then(|()| match args.get(4).map(String::as_str) {
+                                Some("pinned") => {
+                                    equal("pinned", group.pinned, true).and_then(|()| {
+                                        equal("pin", list.group_shows_pin(&group.key), Some(true))
+                                    })
+                                }
+                                Some("unpinned") => {
+                                    equal("pinned", group.pinned, false).and_then(|()| {
+                                        equal("pin", list.group_shows_pin(&group.key), Some(false))
+                                    })
+                                }
+                                Some(other) => Err(format!("pinned or unpinned, not {other}")),
+                                None => Ok(()),
+                            }),
                     },
                 };
                 if result.is_ok() || Instant::now() > deadline {
@@ -1233,11 +1253,14 @@ async fn exact(harness: &Harness, list: &MessageList) -> StepResult {
                 }
             }
         }
-        let sections = crate::list::sections::Bounds::from_dates(
-            page.rows.iter().map(|row| row.date),
+        let pinned = model.section_counts()[crate::list::sections::PINNED];
+        let mut counts = crate::list::sections::Bounds::from_dates(
+            page.rows.iter().skip(pinned as usize).map(|row| row.date),
             &model.thresholds(),
-        );
-        equal("section counts", model.section_counts(), sections.counts())?;
+        )
+        .counts();
+        counts[crate::list::sections::PINNED] = pinned;
+        equal("section counts", model.section_counts(), counts)?;
         println!(
             "  # {loaded} loaded rows of {total} equal the store's at version {}",
             version.0

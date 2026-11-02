@@ -250,6 +250,7 @@ mod tests {
                 thread_count: 1,
                 labels: Vec::new(),
                 subscription: false,
+                pinned: false,
             },
             headers: parsed.headers,
             body_kind: parsed.body_kind,

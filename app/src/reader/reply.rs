@@ -1081,6 +1081,7 @@ mod tests {
                 thread_count: 1,
                 labels: Vec::new(),
                 subscription: false,
+                pinned: false,
             },
             role,
             copies: Vec::new(),
