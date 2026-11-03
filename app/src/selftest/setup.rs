@@ -29,8 +29,9 @@
 //! | `engine-reply original-fetched ok\|offline\|needs-sign-in\|gone\|store\|other` | `OriginalFetched` for the last `fetch-original` taken (its field: `message`); `ok` carries the message `files.rs` stored, whole (ML-063) |
 //! | `engine-reply folder-changed ok\|offline\|taken\|not-allowed\|missing\|lost\|store`, `engine-reply folder-changed refused TEXT` | `FolderChanged` for the last `create-folder`, `rename-folder` or `delete-folder` taken (their fields: `account`, `parent` (`none`), `folder`, `name`); `ok` first makes the change in the app's store as the engine would (`folders.rs`); `refused` carries TEXT as the server's words (M9) |
 //! | `engine-reply update-checked VERSION\|running\|offline\|timeout\|certificate\|busy\|no-release\|unreadable` | `UpdateChecked` for the last `check-for-updates` taken: that release (`running`: this build's version) or the failure |
+//! | `engine-reply one-click-unsubscribed ok\|refused\|offline\|timeout\|not-confirmed` | `OneClickUnsubscribed` for the last `one-click-unsubscribe` taken (issue #14) |
 //! | `engine-reply-stale …` | The same events with a request id the app never used |
-//! | `setup-type NAME TEXT`, `setup-choose NAME ITEM`, `setup-click NAME` | Types into a field, picks a choice's item by its text (a security's `tls`, `starttls`; Incoming mail's `imap`, `pop3`), clicks a visible, sensitive button |
+//! | `setup-type NAME TEXT`, `setup-choose NAME ITEM`, `setup-click NAME` | Types into a field, picks a choice's item by its text (a security's `tls`, `starttls`; Incoming mail's `imap`, `pop3`; a combo row's too), clicks a visible, sensitive button |
 //! | `setup-key enter\|escape` | Enter in the focused field, Escape in the dialog |
 //! | `setup-respond NAME RESPONSE` | Answers the alert dialog named NAME (Remove Account's `remove-account`) as its button would |
 //! | `setup-dismiss-toasts` | Closes the toasts shown and queued, as their × would (for previews) |
@@ -69,7 +70,7 @@ use sealwax_domain::model::{AccountId, FolderId, FolderRole, MessageId};
 use sealwax_domain::updates::Version;
 use sealwax_engine::api::{
     AccountError, BodyError, Command, Event, FetchedPart, FolderChange, FolderError, Original,
-    Password, Refused, RequestId, SyncStatus, UpdateError,
+    Password, Refused, RequestId, SyncStatus, UnsubscribeError, UpdateError,
 };
 use sealwax_engine::imap::ServerText;
 use sealwax_engine::net::Trust;
@@ -274,11 +275,16 @@ pub async fn step(harness: &Harness, command: &str, args: &[String]) -> StepResu
         }
         "setup-choose" => {
             let field = harness.widget(&args[0])?;
-            let dropdown = field
-                .downcast_ref::<gtk::DropDown>()
-                .ok_or_else(|| format!("{} is not a choice", args[0]))?;
-            // The security's TLS or STARTTLS, or "Incoming mail"'s IMAP or POP3 (M8), by name.
-            let items = dropdown.model().ok_or("the choice has no items")?;
+            // The security's TLS or STARTTLS, or "Incoming mail"'s IMAP or POP3 (M8), by name;
+            // Unsubscribe's "Their messages here" is a combo row (issue #25).
+            let combo = field.downcast_ref::<libadwaita::ComboRow>();
+            let dropdown = field.downcast_ref::<gtk::DropDown>();
+            let items = match (dropdown, combo) {
+                (Some(dropdown), _) => dropdown.model(),
+                (_, Some(combo)) => combo.model(),
+                _ => return Err(format!("{} is not a choice", args[0])),
+            }
+            .ok_or("the choice has no items")?;
             let position = (0..items.n_items())
                 .find(|&position| {
                     items
@@ -287,7 +293,11 @@ pub async fn step(harness: &Harness, command: &str, args: &[String]) -> StepResu
                         .is_some_and(|item| item.string().eq_ignore_ascii_case(&args[1]))
                 })
                 .ok_or_else(|| format!("{} offers no {}", args[0], args[1]))?;
-            dropdown.set_selected(position);
+            match (dropdown, combo) {
+                (Some(dropdown), _) => dropdown.set_selected(position),
+                (_, Some(combo)) => combo.set_selected(position),
+                _ => {}
+            }
             Ok(())
         }
         "setup-click" => {
@@ -511,6 +521,8 @@ pub fn check(harness: &Harness, assertion: &str, args: &[String]) -> StepResult 
                     dialog.heading().unwrap_or_default(),
                     dialog.body()
                 )
+            } else if let Some(row) = found.downcast_ref::<adw::ActionRow>() {
+                format!("{}\n{}", row.title(), row.subtitle().unwrap_or_default())
             } else {
                 return Err(format!("{} has no text", args[0]));
             };
@@ -855,6 +867,9 @@ fn fields(
             (kind, Some(*request), fields)
         }
         Command::CheckForUpdates { request } => ("check-for-updates", Some(*request), Vec::new()),
+        Command::OneClickUnsubscribe { request, .. } => {
+            ("one-click-unsubscribe", Some(*request), Vec::new())
+        }
         Command::Shutdown => ("shutdown", None, Vec::new()),
     }
 }
@@ -1143,6 +1158,21 @@ async fn reply(harness: &Harness, args: &[String], stale: bool) -> StepResult {
         ("update-checked", [answer]) => Event::UpdateChecked {
             request,
             result: update_result(answer)?,
+        },
+        ("one-click-unsubscribed", [answer]) => Event::OneClickUnsubscribed {
+            request,
+            result: match answer.as_str() {
+                "ok" => Ok(()),
+                "refused" => Err(UnsubscribeError::Refused),
+                "offline" => Err(UnsubscribeError::Offline),
+                "timeout" => Err(UnsubscribeError::Timeout),
+                "not-confirmed" => Err(UnsubscribeError::NotConfirmed),
+                other => {
+                    return Err(format!(
+                        "use ok, refused, offline, timeout or not-confirmed, not {other}"
+                    ));
+                }
+            },
         },
         _ => return Err(format!("no reply {}", args.join(" "))),
     };

@@ -227,6 +227,10 @@ pub enum ActionId {
     Print,
     ShowOriginal,
     SaveMessage,
+    Unsubscribe,
+    PinSender,
+    PinDomain,
+    UnpinSender,
     Compose,
     Reply,
     ReplyAll,
@@ -261,6 +265,9 @@ pub enum ActionId {
     Refresh,
     ToggleSidebar,
     CommandPalette,
+    GroupBySender,
+    GroupByDomain,
+    DontGroup,
     AddAccount,
     EditAccount,
     RemoveAccount,
@@ -272,6 +279,7 @@ pub enum ActionId {
     DefaultMailApp,
     CheckForUpdates,
     Quit,
+    PinnedSenders,
     EditRules,
     NewRuleFromMessage,
     JunkSender,
@@ -280,7 +288,7 @@ pub enum ActionId {
 }
 
 impl ActionId {
-    pub const ALL: [Self; 89] = [
+    pub const ALL: [Self; 97] = [
         Self::NextMessage,
         Self::PreviousMessage,
         Self::NextInConversation,
@@ -320,6 +328,10 @@ impl ActionId {
         Self::Print,
         Self::ShowOriginal,
         Self::SaveMessage,
+        Self::Unsubscribe,
+        Self::PinSender,
+        Self::PinDomain,
+        Self::UnpinSender,
         Self::Compose,
         Self::Reply,
         Self::ReplyAll,
@@ -354,6 +366,9 @@ impl ActionId {
         Self::Refresh,
         Self::ToggleSidebar,
         Self::CommandPalette,
+        Self::GroupBySender,
+        Self::GroupByDomain,
+        Self::DontGroup,
         Self::AddAccount,
         Self::EditAccount,
         Self::RemoveAccount,
@@ -365,6 +380,7 @@ impl ActionId {
         Self::DefaultMailApp,
         Self::CheckForUpdates,
         Self::Quit,
+        Self::PinnedSenders,
         Self::EditRules,
         Self::NewRuleFromMessage,
         Self::JunkSender,
@@ -872,6 +888,37 @@ impl ActionId {
                 Rules,
                 &[],
             ),
+            // Issues #14 and #24 (ADR-023): no default keys until the owner picks them.
+            Self::Unsubscribe => on_selection("unsubscribe", "Unsubscribe…", Messages, &[]),
+            // Issue #26 (ADR-024): no default keys until the owner picks them.
+            Self::PinSender => on_selection("pin-sender", "Pin Sender", Messages, &[]),
+            Self::PinDomain => on_selection("pin-domain", "Pin Domain", Messages, &[]),
+            Self::UnpinSender => on_selection("unpin-sender", "Unpin Sender", Messages, &[]),
+            Self::PinnedSenders => ActionSpec {
+                menu: Some(MenuSection::Settings),
+                ..command(
+                    "pinned-senders",
+                    "Pinned Senders…",
+                    General,
+                    Scope::Window,
+                    &[],
+                )
+            },
+            Self::GroupBySender => command(
+                "group-by-sender",
+                "Group by Sender",
+                View,
+                Scope::Window,
+                &[],
+            ),
+            Self::GroupByDomain => command(
+                "group-by-domain",
+                "Group by Domain",
+                View,
+                Scope::Window,
+                &[],
+            ),
+            Self::DontGroup => command("dont-group", "Don't Group", View, Scope::Window, &[]),
             Self::ApplyRules => command(
                 "apply-rules",
                 "Apply Rules to This Folder",
@@ -1042,6 +1089,7 @@ mod tests {
                 ActionId::StartAtLogin,
                 ActionId::CheckForUpdates,
                 ActionId::Quit,
+                ActionId::PinnedSenders,
                 ActionId::EditRules,
             ]
         );
@@ -1073,6 +1121,10 @@ mod tests {
                 ActionId::Print,
                 ActionId::ShowOriginal,
                 ActionId::SaveMessage,
+                ActionId::Unsubscribe,
+                ActionId::PinSender,
+                ActionId::PinDomain,
+                ActionId::UnpinSender,
                 ActionId::Reply,
                 ActionId::ReplyAll,
                 ActionId::ReplySender,
@@ -1210,6 +1262,19 @@ mod tests {
         ] {
             assert!(keys(id).is_empty(), "{id:?}");
             assert_eq!(id.category(), Category::Rules, "{id:?}");
+            assert!(id.spec().palette, "{id:?}");
+        }
+        for id in [
+            ActionId::Unsubscribe,
+            ActionId::PinSender,
+            ActionId::PinDomain,
+            ActionId::UnpinSender,
+            ActionId::PinnedSenders,
+            ActionId::GroupBySender,
+            ActionId::GroupByDomain,
+            ActionId::DontGroup,
+        ] {
+            assert!(keys(id).is_empty(), "{id:?}");
             assert!(id.spec().palette, "{id:?}");
         }
         assert_eq!(ActionId::EditRules.detailed_name(), "win.edit-rules");

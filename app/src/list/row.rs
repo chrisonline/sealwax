@@ -14,7 +14,7 @@
 //! (archive, delete, star) where the time was; they are built on the first hover.
 
 use super::item::MessageItem;
-use super::sections::LABELS;
+use super::sections::{LABELS, OLDER, PINNED, Thresholds};
 use crate::triage::Target;
 use crate::window::panes::icon_button;
 use gtk4 as gtk;
@@ -168,8 +168,8 @@ pub fn time_text(date: i64, section: usize, year: i32) -> String {
         return String::new();
     };
     let format = match section {
-        0 | 1 => "%H:%M",
-        2 => "%a",
+        1 | 2 => "%H:%M",
+        3 => "%a",
         _ if time.year() == year => "%e %b",
         _ => "%d.%m.%Y",
     };
@@ -204,6 +204,9 @@ fn accessible_text(row: &MessageSummary, time: &str) -> String {
     if row.thread_count > 1 {
         text.push_str(&format!(", {} messages", row.thread_count));
     }
+    if row.pinned {
+        text.push_str(", pinned sender");
+    }
     if row.flags.is_flagged() {
         text.push_str(", starred");
     }
@@ -231,6 +234,7 @@ struct Parts {
     check: gtk::CheckButton,
     top: gtk::Box,
     sender: gtk::Label,
+    pin: gtk::Image,
     count: gtk::Label,
     time: gtk::Label,
     subject: gtk::Label,
@@ -324,12 +328,20 @@ impl MessageRow {
         check.update_property(&[gtk::accessible::Property::Label("Selected")]);
         let sender = line("sw-sender");
         sender.set_hexpand(true);
+        let pin = gtk::Image::builder()
+            .icon_name("view-pin-symbolic")
+            .tooltip_text("Pinned sender")
+            .visible(false)
+            .build();
+        pin.add_css_class("sw-pin");
+        pin.add_css_class("sw-indicator");
         let count = gtk::Label::builder().visible(false).build();
         count.add_css_class("sw-thread-count");
         let time = gtk::Label::new(None);
         time.add_css_class("sw-time");
         let top = gtk::Box::builder().spacing(6).build();
         top.append(&sender);
+        top.append(&pin);
         top.append(&count);
         top.append(&time);
         let subject = line("sw-subject");
@@ -402,6 +414,7 @@ impl MessageRow {
             check,
             top,
             sender,
+            pin,
             count,
             time,
             subject,
@@ -648,6 +661,14 @@ impl MessageRow {
         ]
     }
 
+    /// Whether the row shows the pin of a pinned sender (issue #26).
+    pub fn shows_pin(&self) -> bool {
+        self.imp()
+            .parts
+            .get()
+            .is_some_and(|parts| parts.pin.is_visible())
+    }
+
     fn show(&self) {
         let Some(item) = self.item() else {
             return;
@@ -711,6 +732,15 @@ impl MessageRow {
             .avatar
             .set_text(&initials(&row.sender_name, &row.sender_email));
         parts.sender.set_text(cut(sender(row), sender_chars));
+        parts.pin.set_visible(row.pinned);
+        let section = if section == PINNED {
+            glib::DateTime::now_local()
+                .ok()
+                .and_then(|now| Thresholds::at(&now).ok())
+                .map_or(OLDER, |thresholds| thresholds.section_of(row.date))
+        } else {
+            section
+        };
         let time = time_text(row.date, section, self.context().year.get());
         parts.time.set_text(&time);
         parts.subject.set_text(if row.subject.is_empty() {
@@ -894,10 +924,13 @@ mod tests {
             has_attachments: true,
             thread_count: 3,
             labels: Vec::new(),
+            subscription: false,
+            pinned: true,
         };
         assert_eq!(
             accessible_text(&row, "10:32"),
-            "Unread, leah@example.test, no subject, 10:32, 3 messages, starred, has attachments"
+            "Unread, leah@example.test, no subject, 10:32, 3 messages, pinned sender, starred, \
+             has attachments"
         );
         let labelled = MessageSummary {
             labels: vec!["Reise".into(), "Work".into()],

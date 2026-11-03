@@ -10,6 +10,42 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **HTML signatures:** a signature can now be a designed HTML file, with your logo, colours, fonts and links, per account and per sender address ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)). Name it with `signature_html = "signatures/work/signature.html"` in `accounts.toml` and put its images beside it: they go inside the message, so recipients see the logo without loading anything from the web. If the file can't be used, the composer says why and your plain signature stands in.
 - **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
 
+## 1.1.4 — 2026-11-01
+
+A fix for pinned senders, and dark colours for styled mail, both from the issues.
+
+- **A pinned sender brings its domain first in Group by Domain** ([issue #26](https://github.com/PixDevsApps/sealwax/issues/26)): in 1.1.3 only a pinned domain moved its group, so changing a sender's pin in Pinned Senders seemed to do nothing there. Now a domain's group comes first, with a pin, while one of its senders is pinned (always, or while that sender's mail is unread), and Unpin Sender on the group takes off its senders' pins too.
+- **Pinned Senders no longer opens empty:** when Sealwax's window was ready before its mail, the list of pins wasn't read until the next pin was made, so the dialog sometimes showed nothing.
+- **Styled mail in dark colours** ([issue #27](https://github.com/PixDevsApps/sealwax/issues/27)): newsletters and receipts keep their own design on a light card, which is bright under a dark theme. Set `dark_styled_mail = true` under `[appearance]` in `config.toml` and, when your theme is dark, their light backgrounds turn dark and their dark text light, keeping their colours' hues and readable contrast. Images keep their colours; a message with its own dark design shows that one. Off unless you turn it on.
+
+## 1.1.3 — 2026-10-31
+
+A fix for pinned senders, from the first report on 1.1.2.
+
+- **Pinned senders come first in Group by too** ([issue #26](https://github.com/PixDevsApps/sealwax/issues/26)): in Group by Sender or Group by Domain, a pinned sender or domain now comes first in the Inbox and All Inboxes, with a pin on its row: always, if it's pinned that way, or while it has unread mail. In 1.1.2 a pinned domain's group stayed where its newest message put it.
+
+## 1.1.2 — 2026-10-31
+
+One more idea from the issues, for the mail you mustn't miss.
+
+- **Pin the senders you mustn't miss** ([issue #26](https://github.com/PixDevsApps/sealwax/issues/26)): **Pin Sender** or **Pin Domain** on a message (its right-click menu, the reader's ⋮ menu or the command palette) puts that sender's mail in a **Pinned** section at the top of the Inbox and All Inboxes, newest first, with a pin beside their name everywhere. A pin lasts until you've read the message, then it goes back to its date; choose **Keep Pinned** in the toast to keep their mail at the top for as long as it's in the Inbox. **Pinned Senders…** in the main menu lists your pins, to change or remove them. The section shows the newest 10, so the rest of your mail still shows. Pins stay on this computer.
+
+## 1.1.1 — 2026-10-30
+
+One more idea from the issues, for grouped mail.
+
+- **Act on a whole group at once** ([issue #25](https://github.com/PixDevsApps/sealwax/issues/25)): in Group by Sender or Group by Domain, select a sender's row and Archive, Delete, Move to Junk, Move to…, Star, Mark as Read or Mark as Unread act on all of their mail in the folder you're looking at, with the same keys and Undo as for messages. The reader shows the sender's page with those commands as buttons. With the Unread chip on, they take only the unread mail.
+- **Unsubscribe from a sender's row:** Unsubscribe… on a group leaves that sender's list, and the dialog can archive or delete their mail here at the same time.
+
+## 1.1.0 — 2026-10-29
+
+Two new features from the issues, and two fixes for new mail.
+
+- **Group your mail by sender or by domain** ([issue #24](https://github.com/PixDevsApps/sealwax/issues/24)): Group by Sender and Group by Domain, in the command palette, show a folder or All Inboxes as one row per sender, or per domain, with how many messages and how many unread. Open a row to see that sender's mail; Escape comes back. The new search words `sender:` and `domain:` do the same from the search field.
+- **Unsubscribe from newsletters** ([issue #14](https://github.com/PixDevsApps/sealwax/issues/14)): an Unsubscribe link in the message's header (also in its right-click menu, the reader's ⋮ menu and the palette) leaves a mailing list the way its sender asks: one click to the sender's server, an email, or their page in your browser. A dialog shows each sender and how before anything is sent. `is:subscription` finds every newsletter, so you can select them all and unsubscribe at once. Mail you already have is read once in the background for the header that makes this work.
+- **A mail server that turns down new-mail notifications no longer trips up Sealwax:** Sealwax asks the server to tell it at once when new mail arrives. A server that said no without giving a reason made that part of Sealwax stop with an internal error until the account's next check, two minutes later, with new mail found by asking once a minute meanwhile. Now Sealwax treats a no like a lost connection and asks again a little later ([chatmail/async-imap#151](https://github.com/chatmail/async-imap/issues/151)).
+- **New mail keeps coming while Sealwax waits to reconnect:** when the connection that brings new mail at once drops and Sealwax waits before making it again, Sealwax now checks the Inbox every minute meanwhile, as it does with servers that don't announce new mail. Before, new mail could wait for the account's next check, up to two minutes. And a connection that worked for a while is made again at once when it drops, instead of after a wait that grew with every drop since Sealwax started.
+
 ## 1.0.6 — 2026-10-27
 
 A security update. Please update.

@@ -74,14 +74,142 @@ Each milestone's exit criteria are the acceptance list. Results go here as dated
 
 ## Results
 
+### 1.1.3 — 2026-10-31
+
+This machine. The feature commit `2f5c7b2` (pinned groups first in Group by, issue #26, ADR-024 amendment) and the version commit `9cbd507` (Cargo.toml 1.1.3, both lock files with only Sealwax's own versions, CHANGELOG "1.1.3 — 2026-10-31", README's version).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| The reporter's case (#26: a domain pinned *always*, its mail all read, expected first in Group by) | Store test `pinned_groups_come_first_in_the_inboxes`: Group by Domain and Group by Sender in an Inbox and All Inboxes, *until read* with and without unread mail, the Unread chip, the Archive keeping its dates. Self-test `list-pinned` (136 steps, all pass): in Group by Domain the club's read group stays in its date pinned *until read*, goes first with a pin after Keep Pinned, its sender goes first in Group by Sender, and back to its date after Unpin | Pass |
+| `SEALWAX_CI_DISPLAY=37 bash tools/ci.sh --ui` on the tree committed (in a private network namespace, as the build below; the host app probes 127.0.0.1 ports) | Formatting, Clippy `-D warnings`, 1,597 tests passed, 0 failed, 99 ignored; all 86 self-test scripts pass; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0` | Pass |
+| The push range (`7d916b3..9cbd507`, 2 commits) scanned before pushing | No working doc or link to one, no home path, user name or hostname, no co-author line, nothing about findings not yet public; the only addresses are test fixtures | Pass |
+| `v1.1.3` on `9cbd507`, `main` and the tag pushed | GitHub's `main` is `9cbd507`, `v1.1.3` the tag object `14d39b2` | Pass |
+| `python3 tools/release.py build` on `v1.1.3` (in a private network namespace, offline) | Finished 23:00 CET: `check()` 1,157 passed, 0 failed; the package's binary says `sealwax 1.1.3` and holds no home path, user name or hostname; package SHA-256 `8da339db…e9a288b` | Pass |
+| The clean-container install test | Not run: Docker isn't running, and starting it is the owner's | Not verified |
+| The release [v1.1.3](https://github.com/PixDevsApps/sealwax/releases/tag/v1.1.3) (`tools/release.py github`, 22:00:52 UTC) | Not a draft or pre-release; GitHub's latest; its five files; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` downloads the same bytes as the build | Pass |
+| Installed here | Not yet (1.1.2 is) | Not verified |
+
+### 1.1.2 — 2026-10-31
+
+This machine. The version commit `43717f3` (Cargo.toml 1.1.2, both lock files with only Sealwax's own versions, CHANGELOG "1.1.2 — 2026-10-31", README's version, its feature line and thanks for #26), on the feature commit `472c841` (the section below).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI on the version commit | Not run whole: the host app this session runs in probes every new 127.0.0.1 port (the section below). On it: `cargo fmt --check`, the build (`sealwax --version` 1.1.2), `sealwax-domain` (504 unit tests and the guide-table tests) and the app's 237 unit tests pass; the code is the feature commit's, whose results are below | Partly verified |
+| The push range (`3bd957c..43717f3`, 2 commits) scanned before pushing | No working doc or link to one, no home path, user name or hostname, no co-author line, nothing about findings not yet public; the only addresses are test fixtures (`example.test`, `kraft.example`, `klatring.example`, `butikk.example`, `avisa.example`) | Pass |
+| `v1.1.2` on `43717f3`, `main` and the tag pushed | GitHub's `main` is `43717f3`, `v1.1.2` the tag object `b78039e` | Pass |
+| `python3 tools/release.py build` on `v1.1.2` | The first run stopped in makepkg's `check()` at `failed_connections_back_off_and_reconnect_tries_at_once`, which counts every connection its fake server accepts and so the host app's probes (0 of 5 failures in a private network namespace, 4 of 5 outside). Run again in one (`unshare -rn`, loopback up, then `unshare -U --map-user=1000`, `CARGO_NET_OFFLINE=true`; the crates fetched by the first run), finished 12:13 UTC: `check()` 1,156 passed, 0 failed, 91 ignored; the package's binary says `sealwax 1.1.2` and holds no home path, user name or hostname; package SHA-256 `2b934962…0976ad6b` | Pass |
+| The clean-container install test | Not run: Docker isn't running, and starting it is the owner's | Not verified |
+| The release [v1.1.2](https://github.com/PixDevsApps/sealwax/releases/tag/v1.1.2) (`tools/release.py github`, 12:13:36 UTC) | Not a draft or pre-release; GitHub's latest; its five files; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` downloads the same bytes as the build | Pass |
+| Installed here | Not yet | Not verified |
+
+### Pinned senders (issue #26) — 2026-10-31
+
+[ADR-024](DECISIONS.md#adr-024--pinned-senders-2026-10-31). This machine; the app headless on Broadway display 37; no real account and no real server; every address fictional.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| Store: `store::pin_tests` (5 tests) | The Pinned section of an Inbox and of All Inboxes (an unread message of a sender pinned until read, any message of a domain kept pinned; the read one in its date), not in the Archive; every row's `pinned`; the open view's Pinned count and section counts; every page at offsets 0–6 and limits 0–6, and across the 10-row cap at offsets 0–29, equal to the whole view's rows; the chips; pinning twice; Unpin and its Undo; no pin for a message that is gone or a sender without a domain; v13 → v14; 200 random steps (new mail, read/unread/star, removal, unpin and restore, a mode change) on five open views with every view's model, kept only by change events, equal to a fresh read after every step, and in the Pinned-first order (`change_events_keep_pinned_lists_exact`: more than 50 splices and 50 reloads) | Pass |
+| Self-test `list-pinned` (new) | 103 of 103: Pin Sender from the row's menu, its toast, the Pinned section and its header, the pin on the row, the reader's "1 of 4" after the reload; Unpin Sender offered instead; opened with mark-read-on-open, back to its date with its pin; Pin Domain and the toast's Keep Pinned; new mail from a pinned sender comes in pinned; the Unread chip; Unpin Sender and Undo; Pinned Senders… (the pins, Always, Unpin); a group of Group by Domain pinned; All Inboxes; archived, it leaves the section and keeps its pin in the Archive; `assert-list-exact` against the store five times | Pass |
+| The list at 100,000 messages: `sealwax-fixtures bench-pins --cold 5 --warm 30` (new), release, on a copy of `target/perf-list/data` (one 100,000-message INBOX, schema v12, migrated to v14 by the run), 11:17:32–11:17:57 UTC, load average 2.6 → 2.2, SQLite 3.50.6 | Warm, p50 / p95. **No pin:** open 0.32 / 0.45 ms; page at 0 0.24 / 0.33; at 49,900 0.99 / 2.87; at 50,100 1.01 / 3.40; at 99,900 0.23 / 1.26; a star → its event (splice) 0.18 / 0.43; cold open p50 4.10 ms. **A newsletter pinned until read** (10 rows pinned): open 0.41 / 0.58; page at 0 0.34 / 0.47; at 49,900 1.12 / 2.55; at 50,100 1.31 / 3.18; a star on another sender's message (splice) 0.23 / 0.33, on a pinned one (reload) 0.19 / 0.36. **And the busiest sender (about 21,000 messages) kept:** open 0.43 / 0.49; at 49,900 1.16 / 1.54; at 50,100 1.29 / 1.63; splice 0.27 / 0.38; reload 0.20 / 0.22; cold open p50 4.03 ms. **The whole fixture domain kept** (every message pinned): open 0.32 / 0.62; at 49,900 0.99 / 1.60; at 50,100 1.04 / 1.78; reload 0.17 / 0.21. Single samples of 31–41 ms (each scenario's p99 at the middle, n = 30) came only in the runs after the cold measurements had evicted the store from the page cache; not traced further | Pass (as fast as without pins; S3's bars) |
+| The same, before the fix (11:12:59 UTC, the section read with one join over the pins) | SQLite scanned the whole sender index (`SCAN m USING INDEX messages_sender`: an expression index isn't used to join on a column with TEXT affinity): every page p50 9–13 ms with one pin, 27–31 ms with the whole domain; cold open p50 1,158.67 ms. Fixed by reading each pin's rows per folder with a bound key from a covering index, and skipping the section's rows after a plain walk instead of `id NOT IN (…)` (middle pages p50 3.6 ms with it) | Fixed |
+| CI, `SEALWAX_CI_DISPLAY=37 bash tools/ci.sh --ui`, 10:59–11:41 UTC, five runs | Not one clean run, from failures outside this change: the host app this session runs in (t3code) connects to every new port on 127.0.0.1 every ~16 s (`GET /` with a `b3` header, then a TLS hello; `ss` names the `t3code` process), which the M0 relay test (`email-spike-s6` `relays_cuts_and_freezes`: 4 connections for 2; 2 of 15 runs fail at `3bd957c` too), the composer's privacy canary (`composer-safety`: 2 hits; fails at `3bd957c` too, 2 of 2) and the hostile suite count; engine timing tests under the full run's load (`failed_connections_back_off_and_reconnect_tries_at_once` 4 of 5 at `3bd957c` too; an OAuth and a POP3 test, which pass 10 of 10 alone here and at `3bd957c`). What did run on this change: fmt and Clippy clean; `cargo test --workspace` 1,208 passed, 1 failed (the POP3 timing test above); 84 of 86 self-test scripts whole, 8,117 of 8,117 steps, `list-pinned` 103 of 103 among them; the other two: `composer-safety` (above) and `window-layout`, 90 of 91 in its CI run (91 of 91 in 9 of 11 runs alone, 13 of 13 at `3bd957c`: two width resets write `layout.toml` from two threads, and the older one can land last; an existing race the timing shows more often); the hostile suite's failing cases (`css-inline-bg`, `script-inline`, `dns-names`, `javascript-url`) each show only t3code's `GET /`, no case path, no resource but `cid:` and `dns=production=0` | Not a clean run (the environment); nothing traced to this change |
+| A real account, the live window, the clean-container install | Not run | Not verified |
+
+### 1.1.1 — 2026-10-30
+
+This machine. The version commit `2768fb4` (Cargo.toml 1.1.1, both lock files, CHANGELOG "1.1.1 — 2026-10-30", README's version, its newsletter line and thanks).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI, `SEALWAX_CI_DISPLAY=37 bash tools/ci.sh --ui` on the version commit (ended 11:37) | exit 0; 1,590 passed, 0 failed, 99 ignored; all 85 self-test scripts, 8,285 of 8,285 steps; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0` | Pass |
+| The push range (`b0deee1..2768fb4`, 2 commits, 21 files) scanned before pushing | No working doc or link to one, no home path, user name or hostname, no client ID; nothing about findings not yet public; the only addresses are test fixtures (`example.test`, `butikk.example`, `shop.example`) | Pass |
+| `v1.1.1` on `2768fb4`, `main` and the tag pushed | GitHub's `main` and `v1.1.1` are `2768fb4` (tag object `ea7dcea`) | Pass |
+| `python3 tools/release.py build` on `v1.1.1` (finished 11:42) | makepkg's `check()`: 1,151 passed, 0 failed, 91 ignored; `SHA256SUMS` checks for all four files; the package's binary says `sealwax 1.1.1`, holds no home path, user name or hostname, and has the Microsoft client ID built in; package SHA-256 `2a8eeaa9…d5677325` | Pass |
+| The clean-container install test | Not run: Docker wasn't running, and starting it is the owner's | Not verified |
+| The release [v1.1.1](https://github.com/PixDevsApps/sealwax/releases/tag/v1.1.1) (`tools/release.py github`, 10:43:00 UTC) | Not a draft or pre-release; GitHub's latest; its five files; the notes are CHANGELOG's section; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` downloads the same bytes as the build | Pass |
+| Installed here | Not yet | Not verified |
+
+### Actions on a whole group (issue #25) — 2026-10-30
+
+[ADR-023 amendment](DECISIONS.md#adr-023-amendment--a-group-takes-the-mail-commands-2026-10-30). This machine; the app headless on Broadway display 37; no real account and no real server.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| Store: `a_groups_mail_in_the_view_newest_first_with_its_newest_subscription` | A sender's and a domain's mail in the view only (not another folder's), newest first, with folder and flags; the Unread filter takes only the unread; the newest message with List-Unsubscribe; none for `GroupBy::None`, an empty key or an unknown sender; `Debug` without addresses | Pass |
+| Self-test `list-senders` | 127 of 127 (79 before): a selected group's page in the reader (name, "3 messages"), Reply disabled, Archive enabled; Mark as Unread and Mark as Read on all of a group's mail; `e` with the focus on the groups archives the group and the next group is selected; Undo brings it back; with the Unread chip, Archive takes only the group's unread message; Unsubscribe disabled for a group without the header and enabled with it; the dialog's Cancel; Unsubscribe with "Archive" chosen archives the group (the fictional account's `mailto:` unsubscribe itself doesn't go through, as before) | Pass |
+| CI, `SEALWAX_CI_DISPLAY=37 bash tools/ci.sh --ui` on the change (ended 10:52) | exit 0; 1,590 passed, 0 failed, 99 ignored; all 85 self-test scripts, 8,285 of 8,285 steps; hostile suite `production_failures=[]`, 60 cases. A doc comment in `app/src/list/mod.rs` was reworded during the run; `cargo fmt --check` passes after it | Pass |
+| A group action on a real account (the server's moves and flags for a large group), its speed on a large store, the right-click menu on a group row (none is built) | Not run | Not verified |
+
+### 1.1.0 — 2026-10-29
+
+The version change for 1.1.0: `Cargo.toml`'s version, both lock files (only Sealwax's own crates, 1.0.6 → 1.1.0), CHANGELOG's "1.1.0 — 2026-10-29" (the section that was "Not released yet"), README's version line, its search and newsletter lines and its thanks. The changes are in the section below and in the two IDLE sections of 2026-10-27 and 2026-10-28. This machine.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| CI, `SEALWAX_CI_DISPLAY=37 bash tools/ci.sh --ui` on the version change (21:43–22:02) | exit 0; 1,589 passed, 0 failed, 99 ignored; all 85 self-test scripts, 8,237 of 8,237 steps; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`, 272 s; `target/debug/sealwax --version` says `sealwax 1.1.0`; no `gtk4-broadwayd` left | Pass |
+| The push range (`97bb020..7d540e3`, 6 commits, 76 files) scanned before pushing | No working doc, home path, user name or hostname; nothing about findings not yet public; the only addresses are the commit author and test fixtures (`example.test`, `butikk.example`, `shop.example` and other `.example` names) | Pass |
+| `v1.1.0` on `7d540e3`, `main` and the tag pushed | GitHub's `main` and `v1.1.0` are `7d540e3` (tag object `1aad45b`) | Pass |
+| `python3 tools/release.py build` on `v1.1.0` (22:14–22:19) | makepkg's `check()`: 1,150 passed, 0 failed, 91 ignored; the Microsoft client ID built in; `SHA256SUMS` checks for all four files; the binary says `sealwax 1.1.0` and holds no home-folder path or user name; both license files are in the package, with async-imap, imap-proto and lettre listed. Package SHA-256 `cf6d42b0…ea31` | Pass |
+| The clean-container install test | Not run: Docker wasn't running, and starting it is the owner's | Not verified |
+| The release [v1.1.0](https://github.com/PixDevsApps/sealwax/releases/tag/v1.1.0) (`tools/release.py github` from the tagged commit, 21:19:41 UTC) | Not a draft or pre-release; GitHub's latest; its five files; the notes are CHANGELOG's section; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` gives the build's package (SHA-256 `cf6d42b0…`), and the published `SHA256SUMS` is the local one | Pass |
+| Installed here | `pacman -Q sealwax`: `1.1.0-1`, installed 2026-10-29 22:27 CET (read 2026-10-30); the binary not compared with the package | Pass |
+
+### Group by sender and List-Unsubscribe (1.1, issues #24 and #14) — 2026-10-29
+
+[ADR-023](DECISIONS.md#adr-023--group-by-sender-and-list-unsubscribe-2026-10-29). This machine; the fake IMAP server, the POP3 actor's fake and loopback HTTP servers on 127.0.0.1; the app headless on Broadway display 37; no real account and no real sender contacted.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `domain::unsubscribe`, `domain::senders`, the `is:subscription`, `sender:` and `domain:` parser tests, `reads_list_unsubscribe` | Pass: folded URIs joined, only `https:`/`http:`/`mailto:` kept (four at most, 2,048 characters each), one-click only for HTTPS with the Post header, `Debug` prints no URI; `domain:` keys on the registrable domain | Pass |
+| Store: schema v13 from a v12 store (`v13_fills_the_sender_domains_and_marks_folders_for_the_backfill`), headers kept and searched, `unsubscribe_targets` (one per List-Id or sender, newest first, the record read back), `a_view_grouped_by_sender_and_by_domain` (counts, unread, the Unread chip) | Pass; the four older migration tests take a v13 store back first | Pass |
+| Backfill: `mail_stored_before_v13_gets_its_list_unsubscribe_once` (`engine/tests/sync.rs`, QRESYNC, CONDSTORE and IMAP4rev1 flavours) and `mail_stored_before_v13_gets_its_list_unsubscribe_from_the_originals` (POP3 actor) | Rows cleared and folders marked by hand, then one pass fills them and clears the marks; a folder the policy doesn't sync is filled when opened; STATUS skips the folders again afterwards (not on IMAP4rev1, which always passes) | Pass |
+| One-click POST (`engine::unsubscribe`, loopback HTTP) | `POST` with `Content-Type: application/x-www-form-urlencoded`, `User-Agent: Sealwax` and the body `List-Unsubscribe=One-Click`; no Cookie, Authorization or Referer; 302, 404 and 500 not confirmations (no redirect followed); `http:`, `mailto:`, a URI with a password, 127.0.0.1, ::1, 10/8, 192.168/16, 169.254.169.254, fd00::/8 and `localhost` refused before any connection; nothing listening is offline | Pass |
+| Self-test `list-senders` (new) | 79 of 79 (69 before the reader's link): groups by sender and domain from the store, a group opened as a search and Escape back with the focus on the groups, the chips, new mail updating the groups, Unsubscribe enabled only with the header, the dialog, a one-click through the fake engine and its toast, Cancel sending nothing; the reader card's Unsubscribe link shown only on a message with the header and opening the dialog for its own message | Pass |
+| CI, `SEALWAX_CI_DISPLAY=37 bash tools/ci.sh --ui` on the final tree | exit 0; 1,589 tests passed, 0 failed; 85 self-tests; hostile suite `production_failures=[]`, 60 cases. Three earlier runs failed on pins the change moved, each updated: the keymap tables (USER_GUIDE.md and the M1 report), the message menu's items (`reply-default`, `rules-menu`: a disabled Unsubscribe…) and the search suggestions (`search-suggestions`) | Pass |
+| A real one-click unsubscribe, a `mailto:` unsubscribe sent through SMTP, the backfill on a real account, grouping on a large store | Not run | Not verified |
+
+### INBOX polled while the IDLE connection waits, and its count starts over after a good run — 2026-10-28
+
+[ADR-006 amendment](DECISIONS.md#adr-006-amendment--inbox-polled-while-the-idle-connection-waits-and-its-count-starts-over-after-a-good-run-2026-10-28). This machine; the fake TLS server on 127.0.0.1 only; no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `inbox_is_polled_while_the_idle_connection_waits_to_try_again` (`engine/tests/actor.rs`: IDLE refused with `NO [CANNOT] …` twice, backoff 30 s, INBOX polled every 300 ms, account passes every 60 s; then `Reconnect`) | New mail in the store within 5 s while the IDLE connection still waits (two IDLEs); after `Reconnect`, IDLE runs and no `EXAMINE` comes in the next second. Before the fix: no new mail within 5 s, and the test fails | Pass |
+| `an_idle_connection_that_ran_well_is_made_again_at_once_every_time` (`engine/tests/actor.rs`: backoff 2 s; three times, 2.3 s of IDLE, then the server closes it) | Each made again within 500 ms. Before the fix: the second after 1.33 s, and the test fails | Pass |
+| The two tests, five runs in a row, alone | 5 of 5 passed (7.0 s each) | Pass |
+| Each part of the fix undone for one run: no new start of the count; the IDLE connection never saying it waits; the command connection not woken by it; the IDLE connection never saying the wait is over | Each fails a test: round 2 made again after 1.87 s; no new mail within 5 s (twice); `EXAMINE`s while IDLE runs | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged; 09:26–09:29 on the final tree, after a first run at 09:24–09:26 with comments still being edited, also exit 0) | exit 0; 1,570 passed, 0 failed, 99 ignored; formatting and Clippy clean; four warnings each from lettre and async-imap (local crates) | Pass |
+| A real server refusing IDLE, or a real connection lost after a good run | Not run | Not verified |
+
+### An IDLE the server refuses is an error, not a panic — 2026-10-27
+
+[ADR-006 amendment](DECISIONS.md#adr-006-amendment--an-idle-the-server-refuses-is-an-error-not-a-panic-2026-10-27), [vendor/README.md](../vendor/README.md), [chatmail/async-imap#151](https://github.com/chatmail/async-imap/issues/151). This machine; scripted and fake TLS servers on 127.0.0.1 only; no real account.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| What the panic did to an account: the fake server answering every IDLE with a bare `BAD`, an account added through the engine (account passes every 2 s, INBOX polled every 1 s; a probe test, not kept), before the fix | The IDLE connection panicked at `vendor/async-imap/src/extensions/idle.rs:205` each time it started (five times in 10 s), and started again after each account pass with a new login; the account stayed synced; a new message was announced 1.0 s after it arrived, by the INBOX poll. After the fix: no panic; the IDLE connection reconnected after its backoff; the message was announced after 28 ms | Pass |
+| `an_idle_the_server_refuses_ends_in_an_error_at_once` (`engine/tests/newmail.rs`, the fake server refusing IDLE with `BAD`, `BAD [CLIENTBUG] …`, `NO`, `NO [CANNOT] …`) | Each an error within 5 s. With the published `idle.rs`: the panic. With only `NO` left as published: `NO` took 30.0 s, and the test fails | Pass |
+| `idle_refused` (async-imap's own tests, `src/client.rs`, the same four replies on its mock stream) and the rest of its tests, outside the repository | 75 passed with `--no-default-features --features runtime-tokio`, 74 with the default `runtime-async-std`. With the published `idle.rs`: `idle_refused` panics | Pass |
+| #151's items 2 and 3 against Sealwax's reading: `an_answer_is_whole_only_at_a_tagged_ok` (`engine/src/imap/raw.rs`, a scripted TLS server: a FETCH response, then `NO [SERVERBUG] …`, a bare `BAD`, or the connection dropped) | `ImapError::No` with its code, `ImapError::Bad`, a connection error; one response seen each time. With `raw.rs` reading a `NO` as success for one run: the test fails | Pass |
+| The vendored copy against the published crate (cargo's cached `async-imap-0.12.0`, `diff -r`) | Differences only in `src/imap_stream.rs`, `src/extensions/idle.rs` and `src/client.rs` (the new test) | Pass |
+| CI, `bash tools/ci.sh` (no `--ui`: the app is unchanged; 17:29–17:31; the first run stopped at formatting, fixed) | exit 0; 1,568 passed, 0 failed, 99 ignored; formatting and Clippy clean; four warnings each from lettre and async-imap (local crates) | Pass |
+| A real server refusing IDLE | Not run: no such server | Not verified |
+
 ### 1.0.6 — 2026-10-27
 
-The version change for 1.0.6: `Cargo.toml`'s version, both lock files (only Sealwax's own crates, 1.0.5 → 1.0.6), CHANGELOG's "1.0.6 — 2026-10-27" (the section that was "Not released yet", with "A security update. Please update.") and README's version line. The three changes (`27bbfea`, `f3defe2`, `dc43bac`) are in the sections below. This machine.
+The version change for 1.0.6: `Cargo.toml`'s version, both lock files (only Sealwax's own crates, 1.0.5 → 1.0.6), CHANGELOG's "1.0.6 — 2026-10-27" (the section that was "Not released yet", with "A security update. Please update.") and README's version line. The three changes (`27bbfea`, `f3defe2`, `dc43bac`) are in the sections below, and the advisory is [GHSA-f9g6-hwxr-7v96](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-f9g6-hwxr-7v96). This machine. The release commit is `7eb94c2`: `27188ee` with the advisory's link added to the CHANGELOG once the advisory had its ID, nothing else changed (`git diff 27188ee 7eb94c2`: two lines of `CHANGELOG.md`). CI ran on `27188ee`; the package was built and install-tested on `7eb94c2`.
 
 | Check | Result | Verdict |
 | --- | --- | --- |
 | CI, `SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui` on the version change (11:14–11:30) | exit 0; 1,566 passed, 0 failed, 99 ignored; all 84 self-test scripts, 8,157 of 8,157 steps; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`, 278 s; `target/debug/sealwax --version` says `sealwax 1.0.6`; no `gtk4-broadwayd` left | Pass |
-| Tag, package build, install test and release | Not part of the version change; recorded with the release | — |
+| The push range (`e8bead1..7eb94c2`, 6 commits, 64 files, 33 of them `vendor/async-imap/`) scanned before pushing | No working doc, home path, user name, hostname or client ID; nothing about findings not yet public; the only addresses are the commit author, test fixtures (`example.com`, `example.org`, `example.test`) and async-imap's own (its author and its test server) | Pass |
+| `v1.0.6` on `7eb94c2`, `main` and the tag pushed | GitHub's `main` and `v1.0.6` are `7eb94c2` (tag object `3b6e58a`) | Pass |
+| `python3 tools/release.py build` on `v1.0.6` (13:25–13:30) | makepkg's `check()`: 1,128 passed, 0 failed, 91 ignored; the Microsoft client ID built in; `SHA256SUMS` checks for all four files; the binary says `sealwax 1.0.6` and holds no home-folder path or user name; both license files are in the package, with async-imap, imap-proto and lettre listed. Package SHA-256 `6aa02595…418f` | Pass |
+| `bash tools/install-test.sh .local/release/1.0.6/sealwax-1.0.6-1-x86_64.pkg.tar.zst` (local `archlinux:base`, `--pull never`; 13:30) | exit 0: pacman installed the package and its dependencies in a fresh container, no library missing; `/usr/bin/sealwax --version` says `sealwax 1.0.6`; both license files installed; `install-smoke` 16 of 16 (the window, a message in the reader, its web process in WebKit's sandbox); the container removed; log in `.local/install-test/20261027-133019/` | Pass |
+| The release [v1.0.6](https://github.com/PixDevsApps/sealwax/releases/tag/v1.0.6) (`tools/release.py github` from the tagged commit, 12:31:12 UTC) | Not a draft or pre-release; GitHub's latest; its five files; the notes are CHANGELOG's section and link the advisory; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` and `releases/download/v1.0.6/sealwax-1.0.6-1-x86_64.pkg.tar.zst` both give the build's package (SHA-256 `6aa02595…`), and the published `SHA256SUMS` is the local one | Pass |
+| [GHSA-f9g6-hwxr-7v96](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-f9g6-hwxr-7v96) | Ecosystem set to Other (affected `<= 1.0.5`, patched `1.0.6`, medium 5.9, CWE-770 and CWE-789 unchanged); a CVE requested (202 Accepted); published 12:31:41 UTC; the page answers 200 without signing in. No CVE ID yet | Pass |
+| Installed here | Not yet | Not verified |
 
 ### POP3: RETR held to LIST's size, a listing to a size and a pace — 2026-10-27
 

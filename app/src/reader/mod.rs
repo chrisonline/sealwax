@@ -1002,6 +1002,7 @@ impl Inner {
                 &stylesheet(theme, style),
                 &rgba(theme.webview_background(style)),
             );
+            view.restyled();
         }
     }
 
