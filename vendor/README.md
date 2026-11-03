@@ -32,7 +32,7 @@ The only differences should be the three changes: `src/transport/smtp/client/mod
 
 To drop it once lettre releases fixes for all three: remove both `[patch.crates-io]` entries and this folder, raise `lettre` in `engine/Cargo.toml` (and `spikes/s5-oauth/Cargo.toml`), update the lock files, and keep `engine/src/smtp/submit/tests.rs`'s cases for long replies, a line that never ends and a reply of many lines passing. To move it to a newer lettre, copy the new published crate here and make the same changes.
 
-## imap-proto 0.17.0, with upstream's nesting limit and reading Proton Mail Bridge's replies
+## imap-proto 0.17.0, with upstream's nesting limit and Proton Mail Bridge's replies
 
 `vendor/imap-proto/` is [imap-proto](https://crates.io/crates/imap-proto) 0.17.0 exactly as published on crates.io (MIT or Apache-2.0, `LICENSE-MIT` and `LICENSE-APACHE`), the parser async-imap reads every IMAP response with, with two commits from imap-proto's own `main` applied (2026-10-25), both in `src/rfc3501/body_structure.rs`:
 
@@ -41,17 +41,15 @@ To drop it once lettre releases fixes for all three: remove both `[patch.crates-
 
 A deeper one is a parse failure, which async-imap reports as a reply it can't read; Sealwax then fetches the message without its BODYSTRUCTURE ([ADR-006 amendment](../docs/DECISIONS.md#adr-006-amendment--a-reply-async-imap-cant-read-no-longer-stops-a-folder-2026-10-22)). Without the limit, imap-proto parsed a BODYSTRUCTURE recursively however deep it was, and about 370 nested multiparts (well under 1 KB) overflowed the 2 MiB stack of the engine's threads in a release build and ended the whole process. A server could send that at any time, and anyone on the network path could send it in place of the greeting on a STARTTLS port (143), before the connection is encrypted. imap-proto's `main` has had the limit since 2026-10-12, but no release has it yet: `main` is 0.18.0, with changes async-imap 0.12 doesn't take.
 
-This fork adds three changes for Proton Mail Bridge, each with a test:
+Three changes of Sealwax's own (2026-11-03, [PR #28](https://github.com/PixDevsApps/sealwax/pull/28) by @chrisonline), each marked "Sealwax's change" in the code, read the BODYSTRUCTUREs Proton Mail Bridge sends, which break RFC 3501's grammar. imap-proto refused the whole FETCH reply, so the #20 fallback above fetched those messages without their structure: one failed FETCH per batch first, no attachment clip, and a large message downloaded whole.
 
-- `body_param` takes an empty list, `()`, as no parameters, as it takes `NIL` (`test_body_param_empty_list_is_none`);
-- `body_type_message` takes a `message/rfc822` part without the space between its envelope and its body (`test_body_structure_message_without_space_after_envelope`);
-- `quoted` (`src/core.rs`) keeps a backslash followed by any other TEXT-CHAR as it is, where the grammar escapes only `\` and `"` (`test_quoted`, whose three "not allowed escapes" now pass through, and a line break after `\` is still refused).
+1. **An empty parameter list** (`src/rfc3501/body_structure.rs`, `body_param`): `("inline" ())` reads `()` as no parameters, as `NIL` is. The grammar allows only `NIL` or a list of at least one pair.
+2. **No space after a message's envelope** (the same file, `body_type_message`): a `message/rfc822` part whose envelope is followed at once by its body, `…"<id>")("text" …`, is read; the grammar has a space there.
+3. **Other escapes in a quoted string** (`src/core.rs`, `quoted`): a backslash followed by any TEXT-CHAR is kept as it is (Bridge writes JSON-style escapes such as `\u00ad` in file names); the grammar escapes only `\` and `"`. A line break after the backslash is still refused. Sealwax uses a BODYSTRUCTURE only for whether a message has plain text, HTML or attachments, never for a file name, so a name kept as written shows nowhere.
 
-The first two are in `src/rfc3501/body_structure.rs`.
+Each only accepts what was refused before, so a reply that follows the grammar is read exactly as before, and the nesting limits are unchanged. Upstream's `main` has none of the three, and its newer `quoted` unescapes the string and refuses any other escape, so moving to a newer imap-proto means making the third change there again.
 
-Why: Proton Mail Bridge breaks RFC 3501's grammar three ways in BODYSTRUCTURE. It describes a part whose `Content-Disposition` is `inline` without parameters as `("inline" ())`, where the grammar allows only `NIL` or a non-empty list; it writes a forwarded message's part (`message/rfc822`) as `…"<message-id>")("text" …`, without the space the grammar requires after the envelope; and it escapes characters in file names as JSON does (`"Bildschirm\u00adfoto….png"`, a soft hyphen), where a quoted string may escape only `\` and `"`. imap-proto refused the whole FETCH reply either way; async-imap turned that into an i/o error that broke the connection, and every account pass that reached such a message failed there ("the command connection was lost", i/o error). Folders after it in the list never finished their first sync: on one Proton account (2026-10-20) Archive, Trash and the larger label folders stayed unfinished, and no pass reached the folders after them. The crate already accepts iCloud's `NIL` encoding the same way. `engine/src/imap/fetch.rs`'s `bridges_empty_disposition_parameters_parse` parses Bridge's first kind of reply as it came.
-
-The workspace's `Cargo.toml` and `fuzz/Cargo.toml` use it through `[patch.crates-io]`; it is excluded from the workspace, so `cargo fmt`, Clippy and the tests don't run on it. Its own tests pass with both commits and the fork's changes (99: upstream's 97, including its five new ones, and the fork's two; run outside the repository, where its dev-dependency can be fetched).
+The workspace's `Cargo.toml` and `fuzz/Cargo.toml` use it through `[patch.crates-io]`; it is excluded from the workspace, so `cargo fmt`, Clippy and the tests don't run on it. Its own tests pass with both commits and the three changes (99: upstream's five new ones and two for the changes, with `test_quoted` changed for the third; run outside the repository, where its dev-dependency can be fetched).
 
 To check it, fetch the published crate, whose SHA-256 is the checksum the lock file had before the patch (`5ccf963d57074747b455398a1763d174da80bcaba6f51e3671a82252b531a68b`):
 
@@ -67,9 +65,9 @@ sha256sum target/imap-proto-check/imap-proto-0.17.0.crate && tar -xzf target/ima
 diff -r target/imap-proto-check/imap-proto-0.17.0 vendor/imap-proto
 ```
 
-The only differences should be the two commits above in `src/rfc3501/body_structure.rs` (`b93964df` without its `src/tests.rs` hunk), applied in that order, and the fork's changes: `body_param`'s new alternative, `body_type_message`'s optional space and `quoted`'s escape in `src/core.rs` (with `one_of` no longer imported and `verify` imported), each with its comment, the two new tests and `test_quoted`'s changed lines.
+The differences should be in `src/rfc3501/body_structure.rs`, the two commits above (`b93964df` without its `src/tests.rs` hunk) applied in that order and changes 1 and 2 with their tests, and in `src/core.rs`, change 3 with `test_quoted`'s cases.
 
-To drop it once an imap-proto release has the limit and accepts Bridge's three replies, and async-imap takes that release: remove both `[patch.crates-io]` entries and this folder, raise `async-imap` in the workspace's `Cargo.toml`, update the lock files, and keep `a_greeting_nested_too_deep_is_unreadable_not_a_crash` (`engine/src/imap/connection/tests.rs`), `a_body_structure_nested_too_deep_costs_one_reconnect` (`engine/tests/sync.rs`) and `bridges_empty_disposition_parameters_parse` (`engine/src/imap/fetch.rs`) passing.
+To drop it once an imap-proto release has the limit and Bridge's three cases, and async-imap takes that release: remove both `[patch.crates-io]` entries and this folder, raise `async-imap` in the workspace's `Cargo.toml`, update the lock files, and keep `a_greeting_nested_too_deep_is_unreadable_not_a_crash` (`engine/src/imap/connection/tests.rs`) and `a_body_structure_nested_too_deep_costs_one_reconnect` (`engine/tests/sync.rs`) and `bridges_empty_disposition_parameters_parse` (`engine/src/imap/fetch.rs`) passing.
 
 ## async-imap 0.12.0, with a buffer that grows with a literal's data and an IDLE that can be refused
 

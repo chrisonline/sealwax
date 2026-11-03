@@ -5,10 +5,16 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 ## Not released yet
 
 - **Proton Mail labels show on your mail:** a message you labelled in Proton now shows its labels as small chips after its subject in the message list, and under the sender in the reader. Sealwax keeps the label folders that Proton Mail Bridge lists under **Labels** up to date by itself, so the labels show without opening those folders first. Labels are shown, not changed: label and unlabel mail in Proton's own apps, and Sealwax follows. Bridge doesn't pass on Proton's label colours, so give each label a colour of your own under `[labels]` in `config.toml` (`Work = "teal"`), from the eight account colours; labels without one are grey.
-- **Proton Mail syncs every folder again:** Proton Mail Bridge describes some messages in a way the mail standard doesn't allow, and Sealwax broke off the connection each time it met one, so the folders listed after it (Archive, Trash and others) never finished downloading. Sealwax now reads it.
 - **Messages open at once with GNOME's text scaling:** with a text scaling factor other than 100 %, Sealwax waited three seconds before showing each message, and made its body taller than its text. It now measures messages in the right unit.
 - **HTML signatures:** a signature can now be a designed HTML file, with your logo, colours, fonts and links, per account and per sender address ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)). Name it with `signature_html = "signatures/work/signature.html"` in `accounts.toml` and put its images beside it: they go inside the message, so recipients see the logo without loading anything from the web. If the file can't be used, the composer says why and your plain signature stands in.
 - **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
+
+## 1.1.5 — 2026-11-03
+
+Two fixes from contributors.
+
+- **Proton Mail Bridge's mail reads fully** ([PR #28](https://github.com/PixDevsApps/sealwax/pull/28), thanks @chrisonline): Bridge describes some messages in a way that breaks the mail standard (an inline part without details, a forwarded message, a file name with a special character), and Sealwax couldn't read that description. Mail still came, read the slower way, but those messages showed no attachment clip and a large one was downloaded whole. Now Sealwax reads Bridge's way too.
+- **Moving mail again after an interruption never deletes a different message** ([PR #19](https://github.com/PixDevsApps/sealwax/pull/19), thanks @alauppe): when a move to another folder was cut off (a suspend, a lost connection), Sealwax finished it by looking in that folder for the messages it had already moved, by their Message-ID, and deleted the originals it found there. Another message with the same Message-ID, such as a resent newsletter, could get the original deleted without it ever having been moved. Now Sealwax checks that the two are the same message, size, date and contents, before deleting, and moves it again if they aren't.
 
 ## 1.1.4 — 2026-11-01
 
