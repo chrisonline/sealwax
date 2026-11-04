@@ -5,8 +5,111 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 ## Not released yet
 
 - **Proton Mail labels show on your mail:** a message you labelled in Proton now shows its labels as small chips after its subject in the message list, and under the sender in the reader. Sealwax keeps the label folders that Proton Mail Bridge lists under **Labels** up to date by itself, so the labels show without opening those folders first. Labels are shown, not changed: label and unlabel mail in Proton's own apps, and Sealwax follows. Bridge doesn't pass on Proton's label colours, so give each label a colour of your own under `[labels]` in `config.toml` (`Work = "teal"`), from the eight account colours; labels without one are grey.
-- **Proton Mail syncs every folder again:** Proton Mail Bridge describes some messages in a way the mail standard doesn't allow, and Sealwax broke off the connection each time it met one, so the folders listed after it (Archive, Trash and others) never finished downloading. Sealwax now reads it.
 - **Messages open at once with GNOME's text scaling:** with a text scaling factor other than 100 %, Sealwax waited three seconds before showing each message, and made its body taller than its text. It now measures messages in the right unit.
+
+## 1.1.7 — 2026-11-03
+
+Two fixes, and a pointer for NixOS.
+
+- **Mail servers that speak only the newest IMAP (IMAP4rev2) sync:** such a server answers every search with a newer kind of reply that Sealwax couldn't read, so no folder came. Now Sealwax reads it.
+- **No stray "Loading older messages…" under Group by:** while the list asked the server for older mail, that line stayed at the bottom of the window after switching to Group by Sender or Domain, where it meant nothing. Now it shows only over the plain list.
+- **Sealwax on NixOS:** INSTALL.md now points to an unofficial NixOS recipe a user shared ([issue #11](https://github.com/PixDevsApps/sealwax/issues/11)). The project doesn't maintain or check it.
+
+## 1.1.6 — 2026-11-03
+
+A look that fits in better.
+
+- **Styled mail gets rounded corners:** a newsletter or receipt narrower than the reader sits on your theme's background, and its corners now take the same rounding as the rest of Sealwax (your Hyprland rounding, or `corner_radius` in `config.toml`). Square themes stay square.
+
+## 1.1.5 — 2026-11-03
+
+Two fixes from contributors.
+
+- **Proton Mail Bridge's mail reads fully** ([PR #28](https://github.com/PixDevsApps/sealwax/pull/28), thanks @chrisonline): Bridge describes some messages in a way that breaks the mail standard (an inline part without details, a forwarded message, a file name with a special character), and Sealwax couldn't read that description. Mail still came, read the slower way, but those messages showed no attachment clip and a large one was downloaded whole. Now Sealwax reads Bridge's way too.
+- **Moving mail again after an interruption never deletes a different message** ([PR #19](https://github.com/PixDevsApps/sealwax/pull/19), thanks @alauppe): when a move to another folder was cut off (a suspend, a lost connection), Sealwax finished it by looking in that folder for the messages it had already moved, by their Message-ID, and deleted the originals it found there. Another message with the same Message-ID, such as a resent newsletter, could get the original deleted without it ever having been moved. Now Sealwax checks that the two are the same message, size, date and contents, before deleting, and moves it again if they aren't.
+
+## 1.1.4 — 2026-11-01
+
+A fix for pinned senders, and dark colours for styled mail, both from the issues.
+
+- **A pinned sender brings its domain first in Group by Domain** ([issue #26](https://github.com/PixDevsApps/sealwax/issues/26)): in 1.1.3 only a pinned domain moved its group, so changing a sender's pin in Pinned Senders seemed to do nothing there. Now a domain's group comes first, with a pin, while one of its senders is pinned (always, or while that sender's mail is unread), and Unpin Sender on the group takes off its senders' pins too.
+- **Pinned Senders no longer opens empty:** when Sealwax's window was ready before its mail, the list of pins wasn't read until the next pin was made, so the dialog sometimes showed nothing.
+- **Styled mail in dark colours** ([issue #27](https://github.com/PixDevsApps/sealwax/issues/27)): newsletters and receipts keep their own design on a light card, which is bright under a dark theme. Set `dark_styled_mail = true` under `[appearance]` in `config.toml` and, when your theme is dark, their light backgrounds turn dark and their dark text light, keeping their colours' hues and readable contrast. Images keep their colours; a message with its own dark design shows that one. Off unless you turn it on.
+
+## 1.1.3 — 2026-10-31
+
+A fix for pinned senders, from the first report on 1.1.2.
+
+- **Pinned senders come first in Group by too** ([issue #26](https://github.com/PixDevsApps/sealwax/issues/26)): in Group by Sender or Group by Domain, a pinned sender or domain now comes first in the Inbox and All Inboxes, with a pin on its row: always, if it's pinned that way, or while it has unread mail. In 1.1.2 a pinned domain's group stayed where its newest message put it.
+
+## 1.1.2 — 2026-10-31
+
+One more idea from the issues, for the mail you mustn't miss.
+
+- **Pin the senders you mustn't miss** ([issue #26](https://github.com/PixDevsApps/sealwax/issues/26)): **Pin Sender** or **Pin Domain** on a message (its right-click menu, the reader's ⋮ menu or the command palette) puts that sender's mail in a **Pinned** section at the top of the Inbox and All Inboxes, newest first, with a pin beside their name everywhere. A pin lasts until you've read the message, then it goes back to its date; choose **Keep Pinned** in the toast to keep their mail at the top for as long as it's in the Inbox. **Pinned Senders…** in the main menu lists your pins, to change or remove them. The section shows the newest 10, so the rest of your mail still shows. Pins stay on this computer.
+
+## 1.1.1 — 2026-10-30
+
+One more idea from the issues, for grouped mail.
+
+- **Act on a whole group at once** ([issue #25](https://github.com/PixDevsApps/sealwax/issues/25)): in Group by Sender or Group by Domain, select a sender's row and Archive, Delete, Move to Junk, Move to…, Star, Mark as Read or Mark as Unread act on all of their mail in the folder you're looking at, with the same keys and Undo as for messages. The reader shows the sender's page with those commands as buttons. With the Unread chip on, they take only the unread mail.
+- **Unsubscribe from a sender's row:** Unsubscribe… on a group leaves that sender's list, and the dialog can archive or delete their mail here at the same time.
+
+## 1.1.0 — 2026-10-29
+
+Two new features from the issues, and two fixes for new mail.
+
+- **Group your mail by sender or by domain** ([issue #24](https://github.com/PixDevsApps/sealwax/issues/24)): Group by Sender and Group by Domain, in the command palette, show a folder or All Inboxes as one row per sender, or per domain, with how many messages and how many unread. Open a row to see that sender's mail; Escape comes back. The new search words `sender:` and `domain:` do the same from the search field.
+- **Unsubscribe from newsletters** ([issue #14](https://github.com/PixDevsApps/sealwax/issues/14)): an Unsubscribe link in the message's header (also in its right-click menu, the reader's ⋮ menu and the palette) leaves a mailing list the way its sender asks: one click to the sender's server, an email, or their page in your browser. A dialog shows each sender and how before anything is sent. `is:subscription` finds every newsletter, so you can select them all and unsubscribe at once. Mail you already have is read once in the background for the header that makes this work.
+- **A mail server that turns down new-mail notifications no longer trips up Sealwax:** Sealwax asks the server to tell it at once when new mail arrives. A server that said no without giving a reason made that part of Sealwax stop with an internal error until the account's next check, two minutes later, with new mail found by asking once a minute meanwhile. Now Sealwax treats a no like a lost connection and asks again a little later ([chatmail/async-imap#151](https://github.com/chatmail/async-imap/issues/151)).
+- **New mail keeps coming while Sealwax waits to reconnect:** when the connection that brings new mail at once drops and Sealwax waits before making it again, Sealwax now checks the Inbox every minute meanwhile, as it does with servers that don't announce new mail. Before, new mail could wait for the account's next check, up to two minutes. And a connection that worked for a while is made again at once when it drops, instead of after a wait that grew with every drop since Sealwax started.
+
+## 1.0.6 — 2026-10-27
+
+A security update. Please update.
+
+- **A mail server can't fill Sealwax's memory with an answer that never ends:** when Sealwax asked an incoming mail server something, it read the answer until the server said it was done, however long that took, and kept what it was told. A server could keep answering one question until memory ran short. Sealwax now stops far above any honest answer, at two million responses or 256 MiB (1 GiB when downloading messages), drops the connection and connects again a little later ([GHSA-f9g6-hwxr-7v96](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-f9g6-hwxr-7v96)).
+- **A mail server can't make Sealwax set aside memory for data it never sends:** a server says how long a message is before sending it, and Sealwax set aside that much memory at once, up to 512 MiB, on the server's word alone. On port 143, anyone on the network could also say it in the server's place before the connection is encrypted. Now Sealwax takes memory as the message arrives ([GHSA-f9g6-hwxr-7v96](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-f9g6-hwxr-7v96)).
+- **POP3 accounts hold the server to its word:** a message may now be at most about twice the size the server gave for it, and the list of messages at most 128 MiB, and it must keep coming. A server that sends a line now and then can't keep Sealwax waiting any more; Sealwax gives up and tries again later.
+
+## 1.0.5 — 2026-10-26
+
+- **No more waiting on an address that doesn't answer:** a mail server's name often leads to several addresses, usually an IPv6 one first. When the network dropped everything sent to that first address, as a broken IPv6 route does, Sealwax waited on it until its time to connect ran out and said the server didn't answer in time, without trying the others. Sealwax now starts on the next address after a quarter of a second while the first goes on trying, and uses whichever answers first, for incoming and outgoing mail alike.
+- **Large messages open even when the server describes them oddly:** Sealwax downloads a message over 10 MB without its attachments, which needs the server's description of how the message is put together. When Sealwax couldn't read that description, the message didn't open, and neither did the other large messages asked for with it. Now such a message is downloaded whole instead, after a moment's reconnect, and the others open as usual.
+- **Sending turned off says so:** when a Microsoft 365 admin turns off SMTP AUTH, the way mail apps send, after you added the account, Sealwax used to keep trying to send without telling you why nothing went. Now the account says "sending off" and a banner says "Sending is turned off" for it and that your organization's admin can turn it on. Your messages wait in the outbox and go once it is on again ([issue #21](https://github.com/PixDevsApps/sealwax/issues/21)'s follow-up).
+- **A clear word for a Microsoft account to add again:** since 1.0.3, Sealwax gives a Microsoft sign-in only to Microsoft's servers. A Microsoft account added earlier with another server saved for it then showed as offline, or quietly didn't send. Now it says "needs adding again", and a banner says to remove the account and add it again.
+- **For people who build Sealwax themselves:** a development build (`cargo run`) now keeps its own folders, `sealwax-devel` beside the installed Sealwax's `sealwax`, so it never opens your real mail or accounts ([INSTALL.md](INSTALL.md#for-developers-build-from-source)).
+
+## 1.0.4 — 2026-10-25
+
+A security update. Please update.
+
+- **A mail server can't make Sealwax quit any more:** when Sealwax fetches new mail, the server describes how each message's parts are nested inside one another. A description nested a few hundred levels deep, under a kilobyte, made Sealwax run out of room and quit at once, and again at each start while the server kept sending it. Anyone on the network could also send one in place of the server's first line on port 143, before the connection is encrypted. Sealwax now stops at 20 levels: such a message shows without its attachment clip. The fix is imap-proto's own, the library Sealwax reads IMAP with, applied to Sealwax's copy until an imap-proto release has it ([GHSA-wv8g-4592-g5r2](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-wv8g-4592-g5r2)).
+
+## 1.0.3 — 2026-10-24
+
+A security update. Please update.
+
+- **Microsoft sign-in stays with Microsoft:** when you added a Microsoft 365 account on your own domain, Sealwax could save an outgoing mail server that only an unchecked DNS answer named. The first message you sent then gave that server your account's access token, which lets its holder read and send your mail until it expires, usually within about an hour. Your password and the long-lived sign-in were never sent. Sealwax now sends a Microsoft token only to Microsoft's own servers, and a new Microsoft account always uses the servers its sign-in was checked on. If sending from a Microsoft account stops with an error after this update, remove the account and add it again. Reported privately by FieldsFury Labs ([GHSA-vhrm-52f2-v9v3](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-vhrm-52f2-v9v3)).
+- **A hostile mail server can't tie up Sealwax any more:** an outgoing mail server, or anyone on the network before the connection is encrypted on port 587, could make Sealwax fill its memory with a reply line that never ends, or keep a processor busy for seconds with a reply of many short lines. Sealwax now stops reading a reply line at 16 KiB and reads each reply once. The never-ending line was reported privately by FieldsFury Labs ([GHSA-chx5-p5h3-52m5](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-chx5-p5h3-52m5)); the fix is in Sealwax's copy of lettre, the library it sends mail with, and has been reported to lettre.
+
+## 1.0.2 — 2026-10-24
+
+- **Links open exactly as written:** a link in a message used to reach the browser slightly rewritten, with its encoded characters undone. Most links didn't mind, but a link that carries another link inside it, as sign-in links from a click tracker do, broke and failed to sign in, while the same link pasted into a browser worked ([issue #22](https://github.com/PixDevsApps/sealwax/issues/22)). Sealwax now hands the browser the link unchanged.
+
+## 1.0.1 — 2026-10-23
+
+- **A clear word when Microsoft 365 won't let mail apps send:** many Microsoft 365 organizations have SMTP AUTH, the way mail apps send mail, turned off, for everyone or for some mailboxes. Adding such an account used to end in "The sign-in didn't work" after a sign-in that had worked ([issue #21](https://github.com/PixDevsApps/sealwax/issues/21)). The setup assistant now says "Sending is turned off for this account" and that your organization's admin can turn SMTP AUTH on for your mailbox; then sign in again. The user guide's "Common problems" says the same.
+
+## 1.0.0 — 2026-10-22
+
+Sealwax 1.0: everything in 0.5.1, checked in daily use with real accounts, in a fresh install and on a live desktop ([the 1.0 release notes](docs/RELEASE_NOTES.md)), and these changes:
+
+- **Hide the folder list:** Toggle Sidebar (Ctrl+Shift+S or F9, or the main menu) now works. It hides the folders so the messages get the room, and brings them back; Sealwax remembers it. Before, the command was listed but did nothing.
+- **A clearer icon at small sizes:** at 16 and 24 pixels, as in a bar or a file list, the wax seal's @ turned into a blur; those two sizes now show a bold @ on the seal. The larger sizes are unchanged.
+- **The other projects' licenses come with Sealwax:** the package now carries the license texts of the libraries Sealwax is built from, in `/usr/share/licenses/sealwax/THIRD-PARTY-LICENSES.txt`, and each release on GitHub has the same file.
+- **One message the server describes oddly no longer stops a folder:** when the server's reply about a message is one Sealwax can't read, Sealwax used to drop the connection and try again forever, so no new mail came ([issue #20](https://github.com/PixDevsApps/sealwax/issues/20), a Zoho account). It now asks for less about that message, and if it still can't read it, leaves that one message out and carries on; the log says which command's reply couldn't be read instead of "i/o error".
+- **Sealwax names itself when it looks up your provider:** while you add an account, the lookups of your provider's settings now say they come from "Sealwax" instead of a placeholder left from development. They still carry no version and, apart from your domain's own settings server, not your address.
 
 ## 0.5.1 — 2026-10-20
 

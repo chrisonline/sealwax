@@ -10,8 +10,8 @@
 //! For the op queue's writes (M4): SELECT read-write (or READ-ONLY by mailbox) with
 //! PERMANENTFLAGS, UID STORE, UID MOVE and UID COPY with COPYUID untagged, tagged or absent, UID
 //! EXPUNGE, EXPUNGE and CLOSE, UID SEARCH UNSEEN and UNDELETED; MOVE and UIDPLUS switched on
-//! and off; a command refused with a given reply, cut off before it runs, run with its reply
-//! lost, or run and never answered.
+//! and off; a command refused with a given reply (IDLE too), cut off before it runs, run with
+//! its reply lost, or run and never answered.
 //! A STORE in an EXAMINEd mailbox is answered OK and ignored, as Dovecot does (S1).
 //! For the Sent copy and drafts (M6): APPEND with a synchronizing or non-synchronizing literal,
 //! answered with APPENDUID where UIDPLUS is on; a connection cut part of the way into a literal;
@@ -19,6 +19,10 @@
 //! For folder management (M9): CREATE, RENAME (with the folders under it), DELETE (refused for
 //! a folder with folders under it, as Dovecot does), SUBSCRIBE and UNSUBSCRIBE with the set of
 //! subscriptions, LIST patterns with `*` and `%`, and a hierarchy delimiter of choice.
+//! For replies async-imap can't parse (issue #20): a message whose header FETCH response has a
+//! garbled BODYSTRUCTURE or garbled FLAGS ([`Garble`]); BODYSTRUCTURE only when asked for.
+//! For a reply that never comes whole: a command answered with text of the test's choosing,
+//! then the connection cut ([`World::cut_with`]).
 //! Synthetic data only.
 
 #![allow(dead_code)]
@@ -68,6 +72,8 @@ impl Flavor {
 
 #[derive(Clone, Debug)]
 pub struct Message {
+    /// The UID used to generate its subject at arrival; COPY must preserve the contents.
+    content_uid: u32,
     pub flags: Vec<String>,
     pub modseq: u64,
     /// INTERNALDATE, Unix seconds.
@@ -139,10 +145,28 @@ pub struct World {
     literal_cut: Option<usize>,
     /// `UID SEARCH HEADER …` finds nothing, as Stalwart's search of Message-IDs (S1).
     pub header_search_misses: bool,
+    /// `UID SEARCH` is answered with ESEARCH, as an IMAP4rev2-only server answers every SEARCH.
+    pub esearch: bool,
     /// The hierarchy delimiter LIST reports (`/` by default).
     pub delimiter: char,
     /// The mailboxes SUBSCRIBE named and UNSUBSCRIBE didn't.
     pub subscribed: BTreeSet<String>,
+    /// Messages, by mailbox and UID, whose header FETCH responses are garbled.
+    pub garbled: BTreeMap<(String, u32), Garble>,
+}
+
+/// What a message's header FETCH response gets wrong, so imap-proto can't parse it. A garbled
+/// value one level of parentheses deep would be skipped as an unknown attribute; nested, the
+/// whole response fails.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Garble {
+    /// A multipart BODYSTRUCTURE with a number where a part's subtype belongs.
+    Structure,
+    /// A BODYSTRUCTURE of multiparts nested 10,000 deep: past imap-proto's limit, and without
+    /// it, past a 2 MiB stack.
+    Deep,
+    /// A parenthesized list inside FLAGS, whatever else is asked for.
+    Flags,
 }
 
 struct Cut {
@@ -171,6 +195,8 @@ enum Fault {
     LoseReply,
     /// It runs, and the server never answers on that connection again.
     Hold,
+    /// Answered with this text alone, and the connection is cut.
+    CutWith(String),
 }
 
 pub const NOW: i64 = 1_791_158_400;
@@ -206,8 +232,10 @@ impl World {
             faults: Vec::new(),
             literal_cut: None,
             header_search_misses: false,
+            esearch: false,
             delimiter: '/',
             subscribed: BTreeSet::new(),
+            garbled: BTreeMap::new(),
         }
     }
 
@@ -263,6 +291,20 @@ impl World {
     /// The next command containing `needle` runs, and its connection goes silent for good.
     pub fn hold(&mut self, needle: &str) {
         self.faults.push((needle.to_owned(), Fault::Hold));
+    }
+
+    /// The next command containing `needle` is answered with `text` alone, which needn't be a
+    /// whole reply, and the connection is cut after it.
+    pub fn cut_with(&mut self, needle: &str, text: &str) {
+        self.faults
+            .push((needle.to_owned(), Fault::CutWith(text.to_owned())));
+    }
+
+    /// Whether a fault waits for `command`.
+    fn faulted(&self, command: &str) -> bool {
+        self.faults
+            .iter()
+            .any(|(needle, _)| command.contains(needle.as_str()))
     }
 
     fn fault(&mut self, command: &str) -> Option<Fault> {
@@ -342,6 +384,7 @@ impl World {
     /// A new message with the given Message-ID (without angle brackets); returns its UID.
     pub fn append_id(&mut self, name: &str, message_id: &str, days: i64, flags: &[&str]) -> u32 {
         let message = Message {
+            content_uid: 0,
             flags: flags.iter().map(|f| f.to_string()).collect(),
             modseq: 0,
             date: NOW - days * 86_400 + 3_600,
@@ -366,6 +409,9 @@ impl World {
     fn put(&mut self, name: &str, mut message: Message) -> u32 {
         let mailbox = self.mailbox(name);
         let uid = mailbox.uidnext;
+        if message.content_uid == 0 {
+            message.content_uid = uid;
+        }
         mailbox.uidnext += 1;
         mailbox.modseq += 1;
         message.modseq = mailbox.modseq;
@@ -479,8 +525,12 @@ impl Fake {
         let world = Arc::new(Mutex::new(World::new(flavor)));
         let shared = world.clone();
         let acceptor = tokio_rustls::TlsAcceptor::from(server);
+        let local = listener.local_addr().unwrap();
         tokio::spawn(async move {
-            while let Ok((tcp, _)) = listener.accept().await {
+            while let Ok((tcp, peer)) = listener.accept().await {
+                if sealwax_infrastructure::loopback::from_outside(peer, local) {
+                    continue;
+                }
                 let _ = tcp.set_nodelay(true);
                 let epoch = {
                     let mut world = shared.lock().unwrap_or_else(|e| e.into_inner());
@@ -685,7 +735,8 @@ fn search_date(text: &str) -> i64 {
     (era * 146_097 + doe - 719_468) * 86_400
 }
 
-fn header(message: &Message, uid: u32) -> String {
+fn header(message: &Message) -> String {
+    let uid = message.content_uid;
     format!(
         "Date: Mon, 5 Oct 2026 09:00:00 +0000\r\nFrom: \"Fake Sender\" <sender@example.test>\r\n\
          To: <test@example.test>\r\nSubject: Fake message {uid}\r\nMessage-ID: <{}>\r\n{}\
@@ -955,6 +1006,11 @@ fn manage(world: &mut World, verb: &str, names: &[String]) -> Result<(), String>
 
 enum Reply {
     Text(String),
+    /// Partial literals may split a UTF-8 code point, so preserve their exact bytes.
+    Bytes {
+        data: Vec<u8>,
+        cut: bool,
+    },
     /// Send the text, then drop the connection without a reply.
     Cut(String),
     /// Answer nothing more on this connection.
@@ -1199,7 +1255,9 @@ fn uid_command(
                     .collect()
             }
         };
-        let line = if found.is_empty() {
+        let line = if world.esearch {
+            esearch(tag, &found)
+        } else if found.is_empty() {
             "* SEARCH\r\n".to_owned()
         } else {
             format!("* SEARCH {}\r\n", found.join(" "))
@@ -1285,8 +1343,18 @@ fn uid_command(
         }
     }
     let whole = items.to_ascii_uppercase().contains("BODY.PEEK[]");
+    let partial = items
+        .to_ascii_uppercase()
+        .split_once("BODY.PEEK[]<")
+        .and_then(|(_, rest)| {
+            let (range, _) = rest.split_once('>')?;
+            let (offset, count) = range.split_once('.')?;
+            Some((offset.parse::<usize>().ok()?, count.parse::<usize>().ok()?))
+        });
     let headers = items.to_ascii_uppercase().contains("HEADER.FIELDS");
     let header_only = items.to_ascii_uppercase().contains("BODY.PEEK[HEADER]");
+    let with_structure = items.to_ascii_uppercase().contains("BODYSTRUCTURE");
+    let size_and_date = items.to_ascii_uppercase().contains("RFC822.SIZE");
     let fields = items
         .find("HEADER.FIELDS (")
         .map(|at| group(&items[at + 14..]).0.to_owned())
@@ -1305,6 +1373,7 @@ fn uid_command(
         }
     }
     let mut sent = 0;
+    let mut binary = Vec::new();
     for (uid, message) in &mailbox.messages {
         if star.is_none() || !in_set(&set, *uid) {
             continue;
@@ -1317,30 +1386,69 @@ fn uid_command(
         };
         let seq = seq + 1;
         if whole {
-            let full = format!("{}{TEXT}", header(message, *uid));
-            out.push_str(&format!(
-                "* {seq} FETCH (UID {uid} BODY[] {{{}}}\r\n{full})\r\n",
-                full.len()
-            ));
+            let full = format!("{}{TEXT}", header(message));
+            if let Some((offset, count)) = partial {
+                let bytes = &full.as_bytes()
+                    [offset.min(full.len())..offset.saturating_add(count).min(full.len())];
+                binary.extend_from_slice(out.as_bytes());
+                out.clear();
+                binary.extend_from_slice(
+                    format!(
+                        "* {seq} FETCH (UID {uid} BODY[]<{offset}> {{{}}}\r\n",
+                        bytes.len()
+                    )
+                    .as_bytes(),
+                );
+                binary.extend_from_slice(bytes);
+                binary.extend_from_slice(b")\r\n");
+            } else {
+                out.push_str(&format!(
+                    "* {seq} FETCH (UID {uid} BODY[] {{{}}}\r\n{full})\r\n",
+                    full.len()
+                ));
+            }
         } else if header_only {
-            let head = header(message, *uid);
+            let head = header(message);
             out.push_str(&format!(
                 "* {seq} FETCH (UID {uid} BODY[HEADER] {{{}}}\r\n{head})\r\n",
                 head.len()
             ));
         } else if headers {
-            let full = header(message, *uid);
+            let full = header(message);
             let head = header_fields(&full, &fields);
             let size = full.len() + TEXT.len();
+            let garble = world.garbled.get(&(name.clone(), *uid)).copied();
+            let flags = match garble {
+                Some(Garble::Flags) => "\\Seen (garbled)".to_owned(),
+                _ => flag_list(message),
+            };
+            let structure = match (with_structure, garble) {
+                (false, _) => String::new(),
+                (true, Some(Garble::Structure)) => "BODYSTRUCTURE ((\"text\" 7 1)\
+                     (\"text\" \"html\" NIL NIL NIL \"7bit\" 1 1) \"alternative\") "
+                    .to_owned(),
+                (true, Some(Garble::Deep)) => format!(
+                    "BODYSTRUCTURE {}(\"text\" \"plain\" NIL NIL NIL \"7bit\" 1 1){} ",
+                    "(".repeat(10_000),
+                    " \"mixed\")".repeat(10_000)
+                ),
+                (true, _) => format!(
+                    "BODYSTRUCTURE (\"text\" \"plain\" (\"charset\" \"utf-8\") NIL NIL \"7bit\" {} 1) ",
+                    TEXT.len()
+                ),
+            };
             out.push_str(&format!(
-                "* {seq} FETCH (UID {uid} FLAGS ({}) INTERNALDATE \"{}\" RFC822.SIZE {size} \
-                 BODYSTRUCTURE (\"text\" \"plain\" (\"charset\" \"utf-8\") NIL NIL \"7bit\" {} 1) \
-                 BODY[HEADER.FIELDS ({fields})] {{{}}}\r\n{head} BODY[TEXT]<0> {{{}}}\r\n{TEXT})\r\n",
-                flag_list(message),
+                "* {seq} FETCH (UID {uid} FLAGS ({flags}) INTERNALDATE \"{}\" RFC822.SIZE {size} \
+                 {structure}BODY[HEADER.FIELDS ({fields})] {{{}}}\r\n{head} BODY[TEXT]<0> {{{}}}\r\n{TEXT})\r\n",
                 internal_date(message.date),
-                TEXT.len(),
                 head.len(),
                 TEXT.len(),
+            ));
+        } else if size_and_date {
+            out.push_str(&format!(
+                "* {seq} FETCH (UID {uid} RFC822.SIZE {} INTERNALDATE \"{}\")\r\n",
+                header(message).len() + TEXT.len(),
+                internal_date(message.date),
             ));
         } else if changedsince.is_some() {
             out.push_str(&format!(
@@ -1357,10 +1465,24 @@ fn uid_command(
         sent += 1;
         if cut.is_some_and(|after| sent >= after) {
             world.cuts += 1;
+            if !binary.is_empty() {
+                binary.extend_from_slice(out.as_bytes());
+                return Reply::Bytes {
+                    data: binary,
+                    cut: true,
+                };
+            }
             return Reply::Cut(out);
         }
     }
     out.push_str(&format!("{tag} OK fetched\r\n"));
+    if !binary.is_empty() {
+        binary.extend_from_slice(out.as_bytes());
+        return Reply::Bytes {
+            data: binary,
+            cut: false,
+        };
+    }
     Reply::Text(out)
 }
 
@@ -1694,7 +1816,13 @@ async fn session(mut io: BufReader<Box<dyn Io>>, world: Arc<Mutex<World>>, epoch
                 None => return,
             }
         }
-        if command.eq_ignore_ascii_case("IDLE") && caps.contains("IDLE") {
+        if command.eq_ignore_ascii_case("IDLE")
+            && caps.contains("IDLE")
+            && !world
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .faulted(command)
+        {
             arrived(
                 &mut world.lock().unwrap_or_else(|e| e.into_inner()),
                 command,
@@ -1727,10 +1855,22 @@ async fn session(mut io: BufReader<Box<dyn Io>>, world: Arc<Mutex<World>>, epoch
                     world.cuts += 1;
                     Reply::Silent
                 }
+                Some(Fault::CutWith(text)) => {
+                    world.cuts += 1;
+                    Reply::Cut(text)
+                }
                 None => answer(&mut world, &mut state, tag, command),
             }
         };
         match reply {
+            Reply::Bytes { data, cut } => {
+                if io.get_mut().write_all(&data).await.is_err()
+                    || io.get_mut().flush().await.is_err()
+                    || cut
+                {
+                    return;
+                }
+            }
             Reply::Text(text) => {
                 if write(&mut io, &text).await.is_err() {
                     return;
@@ -1839,6 +1979,7 @@ async fn append(
             let uid = world.put(
                 &name,
                 Message {
+                    content_uid: 0,
                     flags,
                     modseq: 0,
                     date: NOW,
@@ -1882,4 +2023,33 @@ async fn write(io: &mut BufReader<Box<dyn Io>>, text: &str) -> std::io::Result<(
 /// Mailbox names in `world`, as LIST shows them.
 pub fn names(world: &World) -> BTreeSet<String> {
     world.mailboxes.keys().cloned().collect()
+}
+
+/// An IMAP4rev2 answer to `UID SEARCH`: the UIDs as a sequence set, runs as ranges.
+fn esearch(tag: &str, found: &[String]) -> String {
+    let mut uids: Vec<u32> = found.iter().filter_map(|uid| uid.parse().ok()).collect();
+    uids.sort_unstable();
+    let mut runs: Vec<(u32, u32)> = Vec::new();
+    for uid in uids {
+        match runs.last_mut() {
+            Some((_, high)) if *high + 1 == uid => *high = uid,
+            _ => runs.push((uid, uid)),
+        }
+    }
+    let mut line = format!("* ESEARCH (TAG \"{tag}\") UID");
+    if !runs.is_empty() {
+        let set: Vec<String> = runs
+            .iter()
+            .map(|&(low, high)| {
+                if low == high {
+                    low.to_string()
+                } else {
+                    format!("{low}:{high}")
+                }
+            })
+            .collect();
+        line.push_str(&format!(" ALL {}", set.join(",")));
+    }
+    line.push_str("\r\n");
+    line
 }

@@ -47,6 +47,12 @@ When it's done, the terminal shows the prompt again, and you can close it.
 2. Under the newest release, open **Assets** and click the file whose name starts with `sealwax-` and ends with `-x86_64.pkg.tar.zst`. Your browser saves it in your Downloads folder.
 3. In a terminal, type `sudo pacman -U ~/Downloads/` and the file's name (press **Tab** after typing `~/Downloads/sealwax` to have the rest filled in), then press **Enter**.
 
+### Community packages
+
+Other people package Sealwax for other systems. The project doesn't maintain or check these:
+
+- **NixOS:** an unofficial recipe, with notes on what it installs, in [issue #11](https://github.com/PixDevsApps/sealwax/issues/11).
+
 ## Start Sealwax and add your email
 
 1. Press **Super + Alt + Space** to open the app menu, type `Sealwax`, and press **Enter**.
@@ -138,13 +144,14 @@ makepkg --cleanbuild --force --nodeps -si     # Rust from rustup's own installer
 | `/usr/share/dbus-1/services/io.github.pixdevsapps.Sealwax.service` | D-Bus activation |
 | `/usr/share/icons/hicolor/*/apps/io.github.pixdevsapps.Sealwax.png`, `…/scalable/apps/io.github.pixdevsapps.Sealwax.svg` | The icon |
 | `/usr/share/licenses/sealwax/LICENSE` | The MIT license |
+| `/usr/share/licenses/sealwax/THIRD-PARTY-LICENSES.txt` | The licenses of the libraries Sealwax is built from (from the next release) |
 | `/usr/share/doc/sealwax/` | README, INSTALL, the user guide and INTEGRATIONS |
 
 Nothing in your home folder changes until Sealwax runs. Its key binding and Omarchy menu entries are yours to add ([INTEGRATIONS.md](docs/INTEGRATIONS.md#hyprland)).
 
 **Update a source build:** `git pull`, then the last three commands again, then quit Sealwax with Ctrl+Q and start it again.
 
-**Run from the source tree:** `cargo build` makes a debug build (`target/debug/sealwax`, app-id `io.github.pixdevsapps.Sealwax.Devel`, which runs beside an installed Sealwax with its own keyring items), and `bash tools/ci.sh` runs formatting, Clippy, the tests and the build. Every build uses the same folders as the installed Sealwax (`~/.config/sealwax/`, `~/.local/share/sealwax/`), so a debug build started plainly finds your real accounts; give it scratch folders to keep it away from your mail:
+**Run from the source tree:** `cargo build` makes a debug build (`target/debug/sealwax`, app-id `io.github.pixdevsapps.Sealwax.Devel`, which runs beside an installed Sealwax with its own keyring items), and `bash tools/ci.sh` runs formatting, Clippy, the tests and the build. A debug build keeps its own folders, `sealwax-devel` beside the installed Sealwax's `sealwax` (`~/.config/sealwax-devel/`, `~/.local/share/sealwax-devel/`, and the same under `~/.local/state/` and `~/.cache/`), so it never opens your real store or accounts and starts with none. To try it with your settings, copy `~/.config/sealwax/` to `~/.config/sealwax-devel/`; it then connects to those accounts' servers. For a throwaway run, give it scratch folders:
 
 ```sh
 scratch=$PWD/.local/dev-home
@@ -164,5 +171,5 @@ A release build from the source tree has the installed app-id: with the package 
 | Updating over an earlier package | **Yes** | The same installs, each over the one before; the store's format changes by itself on the first start |
 | The install command (the download from the latest release) | **Yes** | On the owner's machine, 2026-10-09, as written on this page: the download is the release's package (the same SHA-256), and pacman upgraded `sealwax` from 0.3.0-1 to 0.4.0-1; the installed binary is byte for byte the release's and says `sealwax 0.4.0`. For 0.4.1 to 0.4.8 (2026-10-11 to 13) and 0.5.1 (2026-10-20) the download was checked, not installed: each the same SHA-256 as its build, read by pacman as that version. On 2026-10-19 the owner ran the command for 0.4.9: pacman upgraded `sealwax` from 0.4.7-1 to 0.4.9-1, and the installed binary is byte for byte the release's. On 2026-10-20 the owner ran the command for 0.5.0: pacman upgraded `sealwax` from 0.4.9-1 to 0.5.0-1, and the installed binary is byte for byte the release's |
 | Building with Arch's `rust` or `rustup` package (without `--nodeps`) | Not verified | |
-| Installing on a clean system with only the listed dependencies | Not verified | The clean-container install test comes before 1.0 |
+| Installing on a clean system with only the listed dependencies | **Yes** | In a fresh `archlinux:base` container (`tools/install-test.sh`): 0.5.1's package on 2026-10-21 and the 1.0.0 candidate's on 2026-10-22: pacman installed each with every dependency from Arch's mirrors, no library was missing, and the installed Sealwax opened a message with its web process in WebKit's sandbox |
 | Uninstalling with `sudo pacman -R` | Not verified | |
