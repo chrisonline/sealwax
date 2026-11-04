@@ -1450,6 +1450,43 @@ fn label_peers(
     Ok(peers)
 }
 
+/// The rows of every copy of `messages` (theirs included), by Message-ID in their account, as
+/// changed rows that stay where they are: their labels changed. Rows in `all` aren't repeated.
+fn relabelled_rows(
+    tx: &Connection,
+    messages: &[MessageId],
+    all: &[RowChange],
+) -> rusqlite::Result<Vec<RowChange>> {
+    if messages.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut seen: BTreeSet<MessageId> = all.iter().map(|row| row.id).collect();
+    let mut copies = tx.prepare_cached(
+        "SELECT p.id, p.folder_id, p.date, p.flags, p.has_attachments FROM messages m \
+         JOIN messages p ON p.message_id = m.message_id \
+         JOIN folders pf ON pf.id = p.folder_id \
+         WHERE m.id = ?1 AND m.message_id <> '' \
+           AND pf.account_id = (SELECT account_id FROM folders WHERE id = m.folder_id)",
+    )?;
+    let mut rows = Vec::new();
+    for message in messages {
+        let found = copies
+            .query_map([message.0], |copy| {
+                let state = Some((copy.get(3)?, copy.get(4)?));
+                Ok(RowChange {
+                    id: MessageId(copy.get(0)?),
+                    folder: FolderId(copy.get(1)?),
+                    date: copy.get(2)?,
+                    before: state,
+                    after: state,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows.extend(found.into_iter().filter(|copy| seen.insert(copy.id)));
+    }
+    Ok(rows)
+}
+
 /// What leaves the open views, measured before a transaction's changes.
 #[derive(Default)]
 pub(crate) struct Leaving {

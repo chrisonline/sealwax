@@ -106,6 +106,10 @@ pub(crate) enum ReadJob {
         account: AccountId,
         reply: Sender<u32>,
     },
+    MessageLabels {
+        messages: Vec<MessageId>,
+        reply: Sender<Vec<(MessageId, Vec<String>)>>,
+    },
     RemoteSenders {
         reply: Sender<Vec<String>>,
     },
@@ -149,6 +153,7 @@ impl ReadJob {
             ReadJob::BodyCandidates { reply, .. } => reply.is_closed(),
             ReadJob::BodyUsage { reply } => reply.is_closed(),
             ReadJob::PendingOps { reply, .. } => reply.is_closed(),
+            ReadJob::MessageLabels { reply, .. } => reply.is_closed(),
             ReadJob::RemoteSenders { reply } => reply.is_closed(),
             ReadJob::Pins { reply } => reply.is_closed(),
             ReadJob::Conversation { reply, .. } => reply.is_closed(),
@@ -280,6 +285,9 @@ impl Reader {
             ReadJob::PendingOps { account, reply } => {
                 let _ = reply.try_send(self.pending_ops(account));
             }
+            ReadJob::MessageLabels { messages, reply } => {
+                let _ = reply.try_send(self.message_labels(&messages));
+            }
             ReadJob::RemoteSenders { reply } => {
                 let _ = reply.try_send(self.remote_senders());
             }
@@ -303,6 +311,30 @@ impl Reader {
             .conn
             .prepare_cached("SELECT count(*) FROM ops WHERE account_id = ?1 AND done = 0")?
             .query_row([account.0], |row| row.get(0))?)
+    }
+
+    fn message_labels(
+        &self,
+        messages: &[MessageId],
+    ) -> Result<Vec<(MessageId, Vec<String>)>, StoreError> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut read = tx.prepare_cached(concat!(
+            "SELECT ",
+            views::labels_sql!(),
+            " FROM messages m WHERE m.id = ?1"
+        ))?;
+        let mut labels = Vec::with_capacity(messages.len());
+        for id in messages {
+            if let Some(column) = read
+                .query_row([id.0], |row| row.get::<_, Option<String>>(0))
+                .optional()?
+            {
+                labels.push((*id, views::labels(column)));
+            }
+        }
+        drop(read);
+        tx.finish()?;
+        Ok(labels)
     }
 
     fn open_view(&self, request: OpenView) -> Result<ViewOpened, StoreError> {

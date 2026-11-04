@@ -275,25 +275,46 @@ macro_rules! pinned_sql {
 }
 pub(crate) use pinned_sql;
 
-/// A row's columns; the last is its labels: those of the label folders of its account that hold
-/// a copy of it (its Message-ID) the list would show, apart by U+001F.
+/// The labels of `messages m`, apart by U+001F (some may be empty): those of the label folders
+/// of its account that hold a copy of it (its Message-ID) the list would show, and those a
+/// pending copy (`ops.kind` 4, `overlay::COPY`) is putting it in, so a label the user adds shows
+/// at once (ADR-013 amendment of 2026-11-04).
+macro_rules! labels_sql {
+    () => {
+        concat!(
+            "coalesce((SELECT group_concat(substr(lf.name, 8), char(31)) FROM messages lm \
+               JOIN folders lf ON lf.id = lm.folder_id \
+              WHERE m.message_id <> '' AND lm.message_id = m.message_id AND lm.flags & 264 = 0 \
+                AND lf.account_id = (SELECT account_id FROM folders WHERE id = m.folder_id) AND ",
+            $crate::store::views::label_folder!(),
+            "), '') || char(31) || \
+             coalesce((SELECT group_concat(substr(lf.name, 8), char(31)) FROM ops o \
+               JOIN folders lf ON lf.id = o.target \
+              WHERE m.message_id <> '' AND o.done = 0 AND o.kind = 4 AND o.target IS NOT NULL \
+                AND o.message_id = m.message_id \
+                AND o.account_id = (SELECT account_id FROM folders WHERE id = m.folder_id) AND ",
+            $crate::store::views::label_folder!(),
+            "), '')"
+        )
+    };
+}
+pub(crate) use labels_sql;
+
+/// A row's columns; the last is its labels ([`labels_sql`]).
 pub(crate) const SUMMARY_COLUMNS: &str = concat!(
     "m.id, m.folder_id, m.thread_id, m.from_name, m.from_addr, m.subject, m.snippet, m.date, \
      m.flags, m.has_attachments, t.message_count, m.list_unsubscribe IS NOT NULL, ",
     pinned_sql!(),
-    ", (SELECT group_concat(substr(lf.name, 8), char(31)) FROM messages lm \
-       JOIN folders lf ON lf.id = lm.folder_id \
-      WHERE m.message_id <> '' AND lm.message_id = m.message_id AND lm.flags & 264 = 0 \
-        AND lf.account_id = (SELECT account_id FROM folders WHERE id = m.folder_id) AND ",
-    label_folder!(),
-    ")"
+    ", ",
+    labels_sql!()
 );
 
 /// The labels column as [`MessageSummary::labels`] holds them: sorted, each once.
-fn labels(column: Option<String>) -> Vec<String> {
+pub(crate) fn labels(column: Option<String>) -> Vec<String> {
     let mut labels: Vec<String> = column
         .iter()
         .flat_map(|column| column.split('\u{1f}'))
+        .filter(|label| !label.is_empty())
         .map(str::to_owned)
         .collect();
     labels.sort_by_cached_key(|label| (label.to_lowercase(), label.clone()));

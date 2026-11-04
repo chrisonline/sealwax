@@ -4,8 +4,8 @@
 //! never drops an overlay whose op is pending.
 
 use super::{
-    RowChange, State, folder_counts, label_peers, recompute_thread, removed_positions,
-    thread_counts, view_changes,
+    RowChange, State, folder_counts, label_peers, recompute_thread, relabelled_rows,
+    removed_positions, thread_counts, view_changes,
 };
 use crate::store::api::{ChangeEvent, StoreVersion};
 use crate::store::ops_api::{OpId, OpsRefusal, RefusedChange};
@@ -473,7 +473,20 @@ impl State {
         &mut self,
         tx: Transaction<'_>,
         plans: &[RowPlan],
+        folders: BTreeSet<FolderId>,
+    ) -> Result<Committed, StoreError> {
+        self.commit_relabelled(tx, plans, folders, &[])
+    }
+
+    /// [`State::commit_rows`], and the rows of every copy of `relabelled` (by Message-ID, in
+    /// their account) as changed, as their labels are (a copy into a label folder queued or
+    /// dropped).
+    pub(crate) fn commit_relabelled(
+        &mut self,
+        tx: Transaction<'_>,
+        plans: &[RowPlan],
         mut folders: BTreeSet<FolderId>,
+        relabelled: &[MessageId],
     ) -> Result<Committed, StoreError> {
         let mut rows = Vec::new();
         for plan in plans {
@@ -504,6 +517,8 @@ impl State {
         }
         let peers = label_peers(&tx, &rows, &rows)?;
         rows.extend(peers);
+        let copies = relabelled_rows(&tx, relabelled, &rows)?;
+        rows.extend(copies);
         let shared = Arc::clone(&self.shared);
         let open = shared.registry.lock();
         let positions = removed_positions(&tx, &open.open, &rows)?;

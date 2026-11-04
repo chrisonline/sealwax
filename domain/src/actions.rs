@@ -215,6 +215,7 @@ pub enum ActionId {
     Delete,
     Junk,
     MoveTo,
+    Label,
     Star,
     MarkRead,
     MarkUnread,
@@ -288,7 +289,7 @@ pub enum ActionId {
 }
 
 impl ActionId {
-    pub const ALL: [Self; 97] = [
+    pub const ALL: [Self; 98] = [
         Self::NextMessage,
         Self::PreviousMessage,
         Self::NextInConversation,
@@ -316,6 +317,7 @@ impl ActionId {
         Self::Delete,
         Self::Junk,
         Self::MoveTo,
+        Self::Label,
         Self::Star,
         Self::MarkRead,
         Self::MarkUnread,
@@ -507,6 +509,8 @@ impl ActionId {
             Self::MoveTo => {
                 on_selection("move-to", "Move to…", Messages, &["v", "<Control><Shift>v"])
             }
+            // Adds or takes off labels (ADR-013 amendment of 2026-11-04); `l` opens a message.
+            Self::Label => on_selection("label", "Label…", Messages, &["<Shift>l"]),
             Self::Star => on_selection("star", "Star or Unstar", Messages, &["s"]),
             Self::MarkRead => on_selection("mark-read", "Mark as Read", Messages, &["<Shift>i"]),
             Self::MarkUnread => {
@@ -1115,6 +1119,7 @@ mod tests {
                 ActionId::Delete,
                 ActionId::Junk,
                 ActionId::MoveTo,
+                ActionId::Label,
                 ActionId::Star,
                 ActionId::MarkRead,
                 ActionId::MarkUnread,
@@ -1158,6 +1163,7 @@ mod tests {
         assert_eq!(keys(ActionId::Delete), ["numbersign", "Delete"]);
         assert_eq!(keys(ActionId::Junk), ["exclam", "<Control>j"]);
         assert_eq!(keys(ActionId::MoveTo), ["v", "<Control><Shift>v"]);
+        assert_eq!(keys(ActionId::Label), ["<Shift>l"]);
         assert_eq!(keys(ActionId::Star), ["s"]);
         assert_eq!(keys(ActionId::MarkRead), ["<Shift>i"]);
         assert_eq!(keys(ActionId::MarkUnread), ["<Shift>u"]);
