@@ -938,8 +938,8 @@ mod tests {
         };
         assert_eq!(
             accessible_text(&labelled, "10:32"),
-            "Unread, leah@example.test, no subject, 10:32, 3 messages, starred, has attachments, \
-             labels Reise, Work"
+            "Unread, leah@example.test, no subject, 10:32, 3 messages, pinned sender, starred, \
+             has attachments, labels Reise, Work"
         );
     }
 }
