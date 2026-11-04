@@ -49,6 +49,8 @@ Evidence rules: record only what was actually run, with date, command, machine a
 
 Pass with the production reader: 0 connections (not just 0 requests — WebKit pre-connects), 0 TLS hellos, 0 DNS lookups, 0 script traces, each case's own expectation, no allowed navigation, new window or download; the `cid:` test image renders and a foreign `cid:` part never loads. After Show images, the DNS canary may see only the images' names: `<link rel=dns-prefetch>` (an absolute URL, since the reader's pages have no base URL) must stay unlooked-up, because WebKitGTK 2.54 has no switch for it and only the reader's pings filter stops it. In the same run, a no-defence control must show the vectors are live, and a remote-allowed control (CSP widened with the canary's origin, no filter) must load images only.
 
+**Other programs' connections** (2026-11-03): some desktop programs connect to every new port on 127.0.0.1 (the T3 Code app does, about every 16 s), and the tests that count what reaches a local port (this suite's canary, `composer-safety`'s canary, the engine's fake server, the M0 relay test) counted them. `sealwax_infrastructure::loopback::from_outside` reads `/proc` to tell a connection made by a process outside the test's own process tree, and those four leave such connections out. A connection whose process can't be told (the socket gone, its holder unreadable) still counts, so a leak from Sealwax or its WebKit processes is never left out. Before, CI ran clean here only in a private network namespace (`unshare -rn`).
+
 ## Performance targets
 
 Measured with release builds unless noted; each entry names its spike or milestone.
@@ -73,6 +75,42 @@ Measured with release builds unless noted; each entry names its spike or milesto
 Each milestone's exit criteria are the acceptance list. Results go here as dated entries, newest first, with screenshots in `tools/progress/`.
 
 ## Results
+
+### 1.1.6 — 2026-11-03
+
+This machine. The feature commit `233c862` (a narrow styled message's column takes the theme's corner radius: `--sealwax-margins-radius` in the paper stylesheet, the margins script rounds the column's corners and clips the body to them; DESIGN.md) and the version commit `5d939c7` (Cargo.toml 1.1.6, both lock files with only Sealwax's own versions, CHANGELOG "1.1.6 — 2026-11-03", README's version).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| The rounded column, headless (a scratch script run from a temporary copy in `tests/selftest/`, removed; `corners 12` on matte-black and catppuccin-latte, the newsletter sample in a 1440×1300 window) | `margins true`; all four corners of the column rounded and anti-aliased against the theme's background, the message's own top and bottom bands rounded with them; `corners 0` keeps the square column | Pass |
+| `reader`, `reader-dark` and `live-theme` self-tests on the change | 93 of 93, 45 of 45, 29 of 29 steps | Pass |
+| `SEALWAX_CI_DISPLAY=44 bash tools/ci.sh --ui` on `5d939c7` (in a private network namespace, `CARGO_NET_OFFLINE=true`) | Formatting, Clippy `-D warnings`, 1,611 tests passed, 0 failed; 87 self-test scripts, every step passed; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0` | Pass |
+| The real-world corpus with rounded corners | Not run | Not verified |
+| The push range (`ce2250e..5d939c7`, 2 commits) scanned before pushing | No working doc or link to one, no home path, user name or hostname | Pass |
+| `v1.1.6` on `5d939c7`, `main` and the tag pushed | GitHub's `main` is `5d939c7`, `v1.1.6` the tag object `b605a3a` | Pass |
+| `python3 tools/release.py build` on `v1.1.6` (offline: `unshare -rn`, loopback up, then `unshare -U --map-user=1000`, `CARGO_NET_OFFLINE=true`) | Finished 16:07 CET: `check()` 1,170 passed, 0 failed, 92 ignored; `SHA256SUMS` checks for all four files; the package's binary says `sealwax 1.1.6` and holds no home path, user name or hostname; package SHA-256 `699f54a6…df931c0` | Pass |
+| The clean-container install test (`bash tools/install-test.sh` on the package, 16:07 CET) | 16 of 16 steps in a fresh `archlinux:base` container: the libraries and licence files there, the installed binary's window and a message in the reader, its web process in WebKit's sandbox; the container removed afterwards | Pass |
+| The release [v1.1.6](https://github.com/PixDevsApps/sealwax/releases/tag/v1.1.6) (`tools/release.py github`, 15:07:46 UTC) | GitHub's latest; its five files; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` downloads the same bytes as the build | Pass |
+
+### 1.1.5 — 2026-11-03
+
+This machine. PR #28 (@chrisonline: `c7a85d5`, the merge `a1bb40a`, `d275758`; vendored imap-proto reads Proton Mail Bridge's BODYSTRUCTUREs) with its docs `d9fe517` (vendor README, ADR-006 amendment); PR #19 (@alauppe's `6d23c1b` rebased onto 1.1.4 as `5e28abe`) finished in `dd4c868` (two stages batched per folder, ADR-015 amendment); the version commit `c235c83` (Cargo.toml 1.1.5, both lock files with only Sealwax's own versions, CHANGELOG "1.1.5 — 2026-11-03", README's version and thanks).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| PR #28 as submitted (`d275758`), in a copy of `vendor/imap-proto` outside the repository | imap-proto's own tests: 99 passed (97 before, and `test_body_param_empty_list_is_none` and `test_body_structure_message_without_space_after_envelope`; `test_quoted` changed for the third change) | Pass |
+| PR #28 in the workspace (`unshare -rn`) | `cargo test -p sealwax-engine` no failures, `bridges_empty_disposition_parameters_parse` included; Clippy `-D warnings` exit 0; `cargo fmt --check` clean | Pass |
+| Bridge's replies on a real Bridge | Not run: no Bridge account here; the replies are the PR's | Not verified |
+| PR #19 rebased onto 1.1.4, before any change | Engine tests no failures, Andy's 8 scripted cases included | Pass |
+| The two stages (`engine/src/imap/write/retry.rs`) | Andy's scripted cases, adjusted: the server answers `UID FETCH n (UID RFC822.SIZE INTERNALDATE)`, and an over-budget message is now moved again with no body read; new `a_different_internal_date_is_transferred_without_a_download` (MOVE and COPY): 9 of 9 pass. New `a_move_retry_checks_its_candidates_in_one_batch_per_folder` (fake server, six messages, five half-moved, one target with the sixth's Message-ID a day older): after the retry starts, 2 EXAMINEs, 2 SELECTs, 2 size-and-date FETCHes, 2 `BODY.PEEK[]<0.…>` FETCHes; the sixth moved again, the INBOX empty, 7 in the target | Pass |
+| A retry on the testbed (after the owner started Docker; `tools/testbed/up.sh` and `seed.sh`, 11:13–11:16 CET): `cargo test -p sealwax-engine --release --test write_testbed -- --ignored --test-threads=1 --nocapture` | 11 passed, the new `a_move_retry_checks_its_matches_on_every_server` included: on Dovecot (UID MOVE and the COPY path), Dovecot IMAP4rev1 (COPY path) and Stalwart (both), after a half-done move with another message in the target sharing a moved message's Message-ID, the two copies were matched, the other message left alone and the other two moved. The fault suite: in every lost-reply and cut scenario on all three, 0 duplicates, 0 lost, 0 left in the source, 0 `\Deleted` in the target; in "UID COPY reply lost" all 49 messages were in both folders after the cut, so every one was matched by size, internal date and contents (each server's copy came back the same) | Pass |
+| `ops_testbed` (the op queue's cuts and stops, same testbed) | 12 passed: Move, Copy, Store and Expunge, cut and stopped, on all three servers, 0 duplicates, 0 lost | Pass |
+| `SEALWAX_CI_DISPLAY=39 bash tools/ci.sh --ui` on `c235c83` (in a private network namespace, `CARGO_NET_OFFLINE=true`; 10:38–10:54) | Formatting, Clippy `-D warnings`, 1,611 tests passed, 0 failed, 99 ignored; 87 self-test scripts, every step passed; the hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0` | Pass |
+| The push range (`e3716cc..c235c83`, 7 commits) scanned before pushing | No working doc or link to one, no home path, user name or hostname, nothing about findings not yet public; the only co-author line is in the contributor's own commit `c7a85d5` | Pass |
+| `v1.1.5` on `c235c83`, `main` and the tag pushed | GitHub's `main` is `c235c83`, `v1.1.5` the tag object `85d4452`; PR #28 marked merged (09:54:28 UTC) | Pass |
+| `python3 tools/release.py build` on `v1.1.5` (offline: `unshare -rn`, loopback up, then `unshare -U --map-user=1000`, `CARGO_NET_OFFLINE=true`) | Finished 10:58 CET: `check()` 1,170 passed, 0 failed, 91 ignored; `SHA256SUMS` checks for all four files; the package's binary says `sealwax 1.1.5` and holds no home path, user name or hostname; package SHA-256 `5cddeae4…88077c8f` | Pass |
+| The clean-container install test (`bash tools/install-test.sh` on the package, 11:09 CET, after the owner started Docker) | 16 of 16 steps in a fresh `archlinux:base` container: the libraries and licence files there, the installed binary's window and a message in the reader, its web process in WebKit's sandbox; the container removed afterwards | Pass |
+| The release [v1.1.5](https://github.com/PixDevsApps/sealwax/releases/tag/v1.1.5) (`tools/release.py github`, 09:59:11 UTC) | Not a draft or pre-release; GitHub's latest; its five files; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` downloads the same bytes as the build | Pass |
 
 ### 1.1.4 — 2026-11-01
 

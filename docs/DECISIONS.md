@@ -541,6 +541,16 @@ Built on the user's "Yes, fix the IDLE follow-up: reset the failure count after 
 
 **Consequence:** the vendored copy now carries changes no upstream has, so dropping it needs an imap-proto release that takes them too; upstream's `main` unescapes quoted strings and refuses other escapes, so the third change would have to be made there again. A name with such an escape would show as written, but Sealwax uses a BODYSTRUCTURE only for what kinds of parts a message has.
 
+### ADR-006 amendment — ESEARCH read as SEARCH (2026-11-03)
+
+**Status:** Accepted — the owner's word, 2026-11-03 (the sign-off page, item 9: "IMAP4rev2-only servers' ESEARCH replies").
+
+**Found:** a server that speaks only IMAP4rev2 (RFC 9051) answers every SEARCH with ESEARCH, which imap-proto 0.17.0 doesn't parse, so every `UID SEARCH` Sealwax sends was a reply it couldn't read and no folder synced (a P2 follow-up since M3).
+
+**Decision:** the vendored imap-proto reads ESEARCH as the `MailboxDatum::Search` it answers (`vendor/README.md`, the fourth change): ALL's sequence set expanded into UIDs, MIN, MAX, COUNT and MODSEQ passed over, and an ALL standing for more than 10,000,000 numbers refused. Sealwax doesn't send `ENABLE IMAP4rev2` or `RETURN` options; it reads what such a server sends unasked. The engine is unchanged.
+
+**Consequence:** one more change that an imap-proto release would have to carry before the copy can go. A folder of more than 10 million UIDs in one ALL can't sync on such a server (none is known). Test: `esearch_replies_sync_on_every_flavour` (`engine/tests/sync.rs`, the fake server answering with ESEARCH on all three flavours: first sync, new mail and an expunge); before the change it failed with "the server's reply to UID SEARCH couldn't be read".
+
 ## ADR-007 — SMTP, MIME and privacy defaults (2026-10-04)
 
 **Status:** Proposed. S7 confirms the output in Gmail web, Outlook web and Thunderbird.
@@ -1130,6 +1140,10 @@ The owner's decisions on the sign-off sheet (2026-10-19). (1) The 150 ms rule of
 ### ADR-013 amendment — pinned senders, its own release (2026-10-31)
 
 **Status:** Accepted — the owner's word, 2026-10-31, on issue [#26](https://github.com/PixDevsApps/sealwax/issues/26) ("Own release when it is finished"), after the reporter's two use cases. Pinning senders, on no list before, is built for a release of its own, 1.1.2 (the owner, 2026-10-31), which the owner reviewed before it was committed. The design is [ADR-024](#adr-024--pinned-senders-2026-10-31).
+
+### ADR-013 amendment — four 1.x items into 1.2 (2026-11-03)
+
+**Status:** Accepted — the owner's word, 2026-11-03, choosing what goes into 1.2: "Unread count + bar widget (#17); Forward as attachment; Go to Folder… picker (#12); Saved searches". From the 1.x list: an Omarchy bar unread widget ([#17](https://github.com/PixDevsApps/sealwax/issues/17)) with an unread count other programs can read, forward as attachment, and saved searches; and a Go to Folder… picker, on no list before, from [#12](https://github.com/PixDevsApps/sealwax/issues/12). The rest of the 1.x list (COMPRESS, pinned certificates for servers elsewhere, schedule send, snooze, server-side search, templates) stays there. How each is built, its keys (ADR-017) and the interface the widget reads are decided before each is built.
 
 ## ADR-014 — WYSIWYG composer in an editable WebKit view (2026-10-04)
 

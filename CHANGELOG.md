@@ -9,6 +9,20 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **HTML signatures:** a signature can now be a designed HTML file, with your logo, colours, fonts and links, per account and per sender address ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)). Name it with `signature_html = "signatures/work/signature.html"` in `accounts.toml` and put its images beside it: they go inside the message, so recipients see the logo without loading anything from the web. If the file can't be used, the composer says why and your plain signature stands in.
 - **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
 
+## 1.1.7 — 2026-11-03
+
+Two fixes, and a pointer for NixOS.
+
+- **Mail servers that speak only the newest IMAP (IMAP4rev2) sync:** such a server answers every search with a newer kind of reply that Sealwax couldn't read, so no folder came. Now Sealwax reads it.
+- **No stray "Loading older messages…" under Group by:** while the list asked the server for older mail, that line stayed at the bottom of the window after switching to Group by Sender or Domain, where it meant nothing. Now it shows only over the plain list.
+- **Sealwax on NixOS:** INSTALL.md now points to an unofficial NixOS recipe a user shared ([issue #11](https://github.com/PixDevsApps/sealwax/issues/11)). The project doesn't maintain or check it.
+
+## 1.1.6 — 2026-11-03
+
+A look that fits in better.
+
+- **Styled mail gets rounded corners:** a newsletter or receipt narrower than the reader sits on your theme's background, and its corners now take the same rounding as the rest of Sealwax (your Hyprland rounding, or `corner_radius` in `config.toml`). Square themes stay square.
+
 ## 1.1.5 — 2026-11-03
 
 Two fixes from contributors.
