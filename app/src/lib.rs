@@ -17,6 +17,7 @@ pub mod engine;
 pub mod engine_link;
 pub mod folders;
 pub mod go_to;
+pub mod label_picker;
 pub mod labels;
 pub mod list;
 pub mod mailbox;

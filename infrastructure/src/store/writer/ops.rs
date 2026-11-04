@@ -12,13 +12,14 @@ use crate::store::StoreError;
 use crate::store::api::StoreVersion;
 use crate::store::ops_api::{
     BatchId, DueOps, Failure, Lost, NotApplied, OpAction, OpGroup, OpId, OpMessage, OpsDone,
-    OpsFailed, OpsRefusal, QueueTriage, Queued, Recorded, RefusedChange, RuleChange, RuleChanges,
-    Undone,
+    OpsFailed, OpsRefusal, QueueLabel, QueueTriage, Queued, Recorded, RefusedChange, RuleChange,
+    RuleChanges, Undone,
 };
 use crate::store::overlay::{
-    self, Action, BATCH_FOLDER_READ, BATCH_RULES, BATCH_TRIAGE, BATCH_UNDO, COPY, Change, EXPUNGE,
-    FLAGS, HIDDEN, MOVE, READ_BELOW,
+    self, Action, BATCH_FOLDER_READ, BATCH_LABELS, BATCH_RULES, BATCH_TRIAGE, BATCH_UNDO, COPY,
+    Change, EXPUNGE, FLAGS, HIDDEN, MOVE, READ_BELOW,
 };
+use crate::store::views;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use sealwax_domain::model::{AccountId, Flags, FolderId, FolderRole, MessageId};
 use sealwax_domain::triage::{self, FolderInfo, Plan, Unavailable};
@@ -42,6 +43,10 @@ pub(crate) enum OpsJob {
     Rules {
         messages: Vec<RuleChanges>,
         not_before: i64,
+        reply: Sender<Queued>,
+    },
+    Label {
+        request: QueueLabel,
         reply: Sender<Queued>,
     },
     Undo {
@@ -107,6 +112,9 @@ impl Writer {
                 reply,
             } => {
                 let _ = reply.try_send(self.rules(&messages, not_before));
+            }
+            OpsJob::Label { request, reply } => {
+                let _ = reply.try_send(self.label(&request));
             }
             OpsJob::Undo { batch, reply } => {
                 let _ = reply.try_send(self.undo(batch));
@@ -414,6 +422,148 @@ impl Writer {
                 tx.commit()?;
                 StoreVersion(self.state.version)
             }
+        };
+        Ok(Queued {
+            version,
+            batch: batch.map(BatchId),
+            applied,
+            not_applied: not_applied.into_iter().collect(),
+            accounts,
+        })
+    }
+
+    fn label(&mut self, request: &QueueLabel) -> Result<Queued, StoreError> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let label = request.label;
+        let label_account: Option<AccountId> = tx
+            .prepare_cached(concat!(
+                "SELECT lf.account_id FROM folders lf WHERE lf.id = ?1 AND ",
+                views::label_folder!()
+            ))?
+            .query_row([label.0], |row| row.get(0).map(AccountId))
+            .optional()?;
+        let mut ids = request.messages.clone();
+        ids.sort_unstable();
+        ids.dedup();
+        let mut not_applied: BTreeMap<NotApplied, u32> = BTreeMap::new();
+        let mut applied = 0u32;
+        let mut batch = None;
+        let mut touched = Touched::default();
+        let mut relabelled = Vec::new();
+        // Copies queued for expunging, once each though several selected messages share them.
+        let mut expunging = BTreeSet::new();
+        for id in ids {
+            let Some(found) = row(&tx, id)? else {
+                *not_applied.entry(NotApplied::Gone).or_default() += 1;
+                continue;
+            };
+            let folded = overlay::fold(found.folder, chain(&tx, id)?.iter().map(|op| op.change));
+            if folded.leaves() {
+                *not_applied.entry(NotApplied::Gone).or_default() += 1;
+                continue;
+            }
+            let message_id = found.message_id.clone().filter(|mid| !mid.is_empty());
+            let (Some(account), Some(message_id)) = (
+                label_account.filter(|account| *account == found.account),
+                message_id,
+            ) else {
+                *not_applied.entry(NotApplied::NoTarget).or_default() += 1;
+                continue;
+            };
+            if is_local(&tx, account)? {
+                *not_applied.entry(NotApplied::NoTarget).or_default() += 1;
+                continue;
+            }
+            let copies: Vec<MessageId> = tx
+                .prepare_cached(
+                    "SELECT id FROM messages \
+                     WHERE folder_id = ?1 AND message_id = ?2 AND flags & 264 = 0",
+                )?
+                .query_map(params![label.0, message_id], |row| {
+                    row.get(0).map(MessageId)
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+            let on_way: Vec<(OpId, u32)> = tx
+                .prepare_cached(
+                    "SELECT id, attempts FROM ops WHERE done = 0 AND kind = ?1 \
+                       AND target = ?2 AND message_id = ?3 AND account_id = ?4",
+                )?
+                .query_map(params![COPY, label.0, message_id, account.0], |row| {
+                    Ok((OpId(row.get(0)?), row.get(1)?))
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+            if request.add {
+                applied += 1;
+                if !copies.is_empty() || !on_way.is_empty() {
+                    continue;
+                }
+                let batch = match batch {
+                    Some(batch) => batch,
+                    None => *batch.insert(new_batch(&tx, BATCH_LABELS)?),
+                };
+                let op = NewOp {
+                    change: Change::Copy { to: label },
+                    prior_folder: found.folder,
+                    prior_flags: found.flags & !HIDDEN,
+                    not_before: 0,
+                };
+                touched.add(&tx, batch, found, op, false)?;
+                relabelled.push(id);
+                continue;
+            }
+            if on_way.iter().any(|(_, attempts)| *attempts > 0) {
+                // The copy may be in the label folder already; once its pass stores it, it can go.
+                *not_applied.entry(NotApplied::Busy).or_default() += 1;
+                continue;
+            }
+            applied += 1;
+            if !on_way.is_empty() {
+                let mut drop = tx.prepare_cached("DELETE FROM ops WHERE id = ?1")?;
+                for (op, _) in &on_way {
+                    drop.execute([op.0])?;
+                }
+                relabelled.push(id);
+            }
+            for copy in copies {
+                if !expunging.insert(copy) {
+                    continue;
+                }
+                let Some(copy_row) = row(&tx, copy)? else {
+                    continue;
+                };
+                let folded = overlay::fold(
+                    copy_row.folder,
+                    chain(&tx, copy)?.iter().map(|op| op.change),
+                );
+                if folded.leaves() {
+                    continue;
+                }
+                let batch = match batch {
+                    Some(batch) => batch,
+                    None => *batch.insert(new_batch(&tx, BATCH_LABELS)?),
+                };
+                let op = NewOp {
+                    change: Change::Expunge,
+                    prior_folder: copy_row.folder,
+                    prior_flags: copy_row.flags & !HIDDEN,
+                    not_before: 0,
+                };
+                touched.add(&tx, batch, copy_row, op, false)?;
+            }
+        }
+        let accounts = touched.accounts.iter().copied().collect();
+        let version = if batch.is_some() || !relabelled.is_empty() {
+            let plans = touched.plans(&tx)?;
+            prune(&tx)?;
+            defer_blob_deletions(&tx, &plans)?;
+            self.state
+                .commit_relabelled(tx, &plans, BTreeSet::new(), &relabelled)?
+                .version
+        } else {
+            tx.commit()?;
+            StoreVersion(self.state.version)
         };
         Ok(Queued {
             version,

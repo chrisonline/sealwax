@@ -116,6 +116,10 @@ fn sections(state: &AppState, targets: &[Target]) -> Vec<Vec<Entry>> {
             triaged(ActionId::Archive),
             triaged(ActionId::Delete),
             triaged(ActionId::MoveTo),
+            Entry {
+                why_not: crate::label_picker::applies(state).err(),
+                ..plain(ActionId::Label)
+            },
             triaged(ActionId::Junk),
         ],
         vec![

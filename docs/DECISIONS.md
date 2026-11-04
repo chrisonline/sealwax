@@ -1112,6 +1112,19 @@ The owner's decisions on the sign-off sheet (2026-10-19). (1) The 150 ms rule of
 
 **Consequences:** each label folder costs a folder pass when its STATUS changes. A message older than its label folder's window shows no label until older mail is loaded there. A label folder removed or renamed on the server changes the labels the open list shows only when its rows are read again (the next change to them, or reopening the view).
 
+### ADR-013 amendment — labels added and taken off (2026-11-04)
+
+**Status:** Accepted — the user's word, 2026-11-04 ("I want to be able to select a label for the mail… if I want to add another label I can't do this currently"; "Add and remove (Recommended)"), the "later decision" the amendment above left open.
+
+**Decision:** **Label…** (`label`, Shift+L; `l` opens a message) on the selected messages, or a group's mail, of one server account with label folders. Its picker (`app::label_picker`) lists that account's label folders with how many of the messages have each, from `Store::message_labels`; a toggle queues `Store::queue_label` at once, without an undo window (toggling back is the undo), and wakes the op runner.
+- **Adding** queues a `COPY` op (the one rules' `fileinto :copy` uses) of the message into the label folder, unless a shown copy with its Message-ID is there or a copy is on its way. Bridge reads a copy into `Labels/X` as labelling. The row shows the label at once: the labels column (`views::labels_sql`) counts pending copies into label folders by Message-ID too, and the writer reports every copy's row as changed (`commit_relabelled`). After the copy the runner syncs the label folder (`Ran::Place`), which stores the copy.
+- **Taking off** queues an `EXPUNGE` op on each shown copy with the message's Message-ID in the label folder (Bridge reads it as unlabelling; the message stays in its folders), which hides at once and so takes the label off every copy's row (`label_peers`). A copy on its way that hasn't started is dropped instead; one the runner has started can't be (`NotApplied::Busy`, "try again in a moment").
+- Left alone (`NoTarget`): a message without a Message-ID (its copies can't be told), of another account, or of a local account; a folder that isn't a label folder.
+
+**Not chosen:** creating labels from Sealwax (a `CREATE` of `Labels/<name>`; labels are made in Proton's apps for now); an undo window and Undo toast (the picker toggles back); a Label button on the batch page (the key, the menu and the palette reach it).
+
+**Consequences:** batch kind 5 (`BATCH_LABELS`). Between a copy's being done and the label folder's pass storing it, a row read again shows no label for a moment. Undo after a label change undoes the previous mail action, not the label.
+
 ### ADR-013 amendment — group by sender and List-Unsubscribe into 1.1 (2026-10-29)
 
 **Status:** Accepted — the user's word, 2026-10-29 ("let's do #24 alongside #14"), on issues [#24](https://github.com/PixDevsApps/sealwax/issues/24) and [#14](https://github.com/PixDevsApps/sealwax/issues/14). List-Unsubscribe moves from the 1.x list into 1.1, with an `is:subscription` search filter and an Unsubscribe command; grouping the message list by sender or domain, on no list before, comes with it. The design is [ADR-023](#adr-023--group-by-sender-and-list-unsubscribe-2026-10-29).

@@ -1208,6 +1208,7 @@ impl AppState {
         crate::rules::install_window(self, window, &win_actions);
         crate::unsubscribe::install_window(self, &win_actions);
         crate::pins::install_window(self, &win_actions);
+        crate::label_picker::install_window(self, &win_actions);
         for (id, by) in [
             (ActionId::GroupBySender, GroupBy::Sender),
             (ActionId::GroupByDomain, GroupBy::Domain),
@@ -1850,6 +1851,7 @@ impl AppState {
             crate::unsubscribe::applies(self).is_ok(),
         );
         crate::pins::refresh(self, actions);
+        actions.set_applies(ActionId::Label, crate::label_picker::applies(self).is_ok());
         let group_by = list.group_by();
         actions.set_applies(ActionId::GroupBySender, group_by != GroupBy::Sender);
         actions.set_applies(ActionId::GroupByDomain, group_by != GroupBy::Domain);
@@ -2700,7 +2702,7 @@ fn quick_tooltips(keymap: &Keymap) -> Vec<(Quick, String)> {
 /// The selected messages whose rows are loaded.
 /// What the mail commands act on now: the selected group's mail, or the selected messages
 /// whose rows are loaded.
-fn loaded_targets(list: &MessageList) -> Vec<Target> {
+pub(crate) fn loaded_targets(list: &MessageList) -> Vec<Target> {
     if list.selected_group().is_some() {
         return list.group_targets().unwrap_or_default();
     }

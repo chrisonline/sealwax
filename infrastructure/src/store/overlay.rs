@@ -36,6 +36,9 @@ pub(crate) const BATCH_UNDO: i64 = 2;
 pub(crate) const BATCH_COMPOSE: i64 = 3;
 /// What an account's rules did to a message that arrived (ADR-020).
 pub(crate) const BATCH_RULES: i64 = 4;
+/// A label added or taken off (ADR-013 amendment of 2026-11-04): copies into a label folder, or
+/// the copies there expunged.
+pub(crate) const BATCH_LABELS: i64 = 5;
 
 /// Whether a row with these flags is listed and counted.
 pub(crate) fn shown(flags: u32) -> bool {

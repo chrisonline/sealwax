@@ -53,6 +53,20 @@ pub enum RuleChange {
     },
 }
 
+/// A label added to messages or taken off them (ADR-013 amendment of 2026-11-04). A label is a
+/// label folder ("Labels/Work", as Proton Mail Bridge lists them) holding a copy of the message:
+/// adding one copies the message there, taking it off expunges the copies there, which Bridge
+/// reads as labelling and unlabelling. Due at once, without an undo window: the picker toggles
+/// back.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueueLabel {
+    pub messages: Vec<MessageId>,
+    /// The label folder.
+    pub label: FolderId,
+    /// Add the label, else take it off.
+    pub add: bool,
+}
+
 /// Why an action left messages alone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NotApplied {
@@ -62,6 +76,9 @@ pub enum NotApplied {
     AlreadyThere,
     /// Not in the store any more, or about to be deleted for good.
     Gone,
+    /// The server is making the change this one would undo (a copy into a label folder): it
+    /// can be taken back once it is done.
+    Busy,
 }
 
 /// The reply to a queued action.
@@ -266,6 +283,23 @@ impl Store {
                 reply,
             })
         })
+    }
+
+    /// Adds `request.label` to its messages or takes it off them ([`QueueLabel`]), as one batch
+    /// due at once with its overlay: a message gets a copy into the label folder unless one is
+    /// there or on its way (then it counts as applied); taking a label off expunges the shown
+    /// copies with the message's Message-ID in the label folder and drops copies on their way
+    /// that haven't started. The rows of every copy show their labels again. A message without a
+    /// Message-ID, of another account or of a local account, or a folder that isn't a label
+    /// folder, is left alone (`NoTarget`).
+    pub fn queue_label(&self, request: QueueLabel) -> Reply<Queued> {
+        self.write(|reply| WriteJob::Ops(OpsJob::Label { request, reply }))
+    }
+
+    /// The labels of `messages`, as [`MessageSummary::labels`](sealwax_domain::model::MessageSummary::labels) gives them (pending
+    /// copies included), for the label picker. Messages not in the store are left out.
+    pub fn message_labels(&self, messages: Vec<MessageId>) -> Reply<Vec<(MessageId, Vec<String>)>> {
+        self.read(|reply| ReadJob::MessageLabels { messages, reply })
     }
 
     /// Marks every message of `folder` read, the server's unread below a windowed folder's floor
