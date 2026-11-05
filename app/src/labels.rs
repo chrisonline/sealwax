@@ -20,7 +20,7 @@ thread_local! {
 
 /// Takes `config.toml`'s label colours; true when they changed, so the chips shown should be
 /// filled again.
-pub fn set_colors(colors: &BTreeMap<String, AccountColor>) -> bool {
+pub(crate) fn set_colors(colors: &BTreeMap<String, AccountColor>) -> bool {
     COLORS.with(|current| {
         let mut current = current.borrow_mut();
         let changed = *current != *colors;
@@ -32,7 +32,7 @@ pub fn set_colors(colors: &BTreeMap<String, AccountColor>) -> bool {
 }
 
 /// The colour `label` shows in, if `[labels]` gives it one.
-pub fn color(label: &str) -> Option<AccountColor> {
+pub(crate) fn color(label: &str) -> Option<AccountColor> {
     COLORS.with(|colors| colors.borrow().get(label).copied())
 }
 
@@ -68,7 +68,7 @@ fn style(chip: &gtk::Label, text: &str, color: Option<AccountColor>) {
 
 /// Fills `chips` with one chip per label, reusing the chips it holds: at most `most` labels,
 /// then one "+N" chip for the rest. `chips` hides without any.
-pub fn fill(chips: &gtk::Box, labels: &[String], most: usize) {
+pub(crate) fn fill(chips: &gtk::Box, labels: &[String], most: usize) {
     let shown = labels.len().min(most);
     let rest = labels.len() - shown;
     let wanted = shown + usize::from(rest > 0);

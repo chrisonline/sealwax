@@ -2,7 +2,10 @@
 //! scratch store and blob store under `target/`, secrets in memory, only the testbed CA trusted.
 //! Test users only; every address is at `example.test`.
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "shared by several test binaries, each using a part"
+)]
 
 use crate::common::{self, PASSWORD};
 use crate::snapshot::{self, Folder};
@@ -364,7 +367,6 @@ pub fn tally(events: &[Event]) -> BTreeMap<&'static str, usize> {
         let kind = match event {
             Event::AccountStatus { status, .. } => status_name(*status),
             Event::SyncProgress { .. } => "progress",
-            Event::FoldersSynced { .. } => "folders-synced",
             Event::OlderLoaded { .. } => "older-loaded",
             Event::BodyFetched { result: Ok(()), .. } => "body-ok",
             Event::BodyFetched { result: Err(_), .. } => "body-failed",

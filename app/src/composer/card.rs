@@ -21,6 +21,7 @@ use super::recipients::{LABEL_WIDTH, RecipientField};
 use super::{ComposeRequest, chooser_answer};
 use crate::actions::{self, ActionSet, ScopedShortcuts};
 use crate::application::SealwaxApplication;
+use crate::test_hooks::Log;
 use crate::theme::ListenerId;
 use crate::window::dock::{CardState, Dock, WeakDock};
 use crate::window::panes::{classed, icon, icon_button, named};
@@ -40,9 +41,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 /// The draft is saved this long after the last edit…
-pub const IDLE_SAVE: Duration = Duration::from_millis(1500);
+pub(crate) const IDLE_SAVE: Duration = Duration::from_millis(1500);
 /// …and at most this long after the first unsaved one (PRD C5: at most 5 s behind).
-pub const MAX_BEHIND: Duration = Duration::from_secs(4);
+pub(crate) const MAX_BEHIND: Duration = Duration::from_secs(4);
 
 /// The formatting toolbar after the style menu: the registry's commands and their icons, a
 /// separator before each group.
@@ -81,7 +82,7 @@ const FORMAT_GROUPS: [&[(ActionId, &[&str])]; 2] = [
 ];
 
 /// The paragraph styles: WebKit's FormatBlock tag and the menu's name.
-pub const STYLES: [(&str, &str); 5] = [
+pub(crate) const STYLES: [(&str, &str); 5] = [
     ("p", "Paragraph"),
     ("h1", "Heading 1"),
     ("h2", "Heading 2"),
@@ -91,7 +92,7 @@ pub const STYLES: [(&str, &str); 5] = [
 
 /// Whether a composer runs `id`: the Keyboard Shortcuts dialog lists its commands as built
 /// though the main window's action set doesn't run them.
-pub fn runs(id: ActionId) -> bool {
+pub(crate) fn runs(id: ActionId) -> bool {
     COMMANDS.contains(&id)
 }
 
@@ -149,7 +150,7 @@ pub enum Ending {
 
 /// A composer card.
 #[derive(Clone)]
-pub struct Composer {
+pub(crate) struct Composer {
     inner: Rc<Inner>,
 }
 
@@ -212,8 +213,10 @@ struct Inner {
     loaded: Cell<bool>,
     dirty: Cell<bool>,
     first_dirty: Cell<Option<Instant>>,
+    /// When the body or a field last changed; `None` while the draft is untouched.
     last_edit: Cell<Option<Instant>>,
-    edits: RefCell<Vec<Instant>>,
+    /// When each edit happened, kept only while a self-test records (`test_hooks`).
+    edits: Log<Instant>,
     saving: Cell<bool>,
     timer: RefCell<Option<glib::SourceId>>,
     ending: Cell<Ending>,
@@ -231,7 +234,7 @@ struct Inner {
 impl Composer {
     /// Builds the card for `request` in `dock`, shows it at once and fills it when the draft is
     /// ready; with `focus` the card takes the keyboard focus then.
-    pub fn open(
+    pub(crate) fn open(
         app: &SealwaxApplication,
         dock: &Dock,
         backend: Rc<dyn Backend>,
@@ -300,7 +303,7 @@ impl Composer {
             dirty: Cell::new(false),
             first_dirty: Cell::new(None),
             last_edit: Cell::new(None),
-            edits: RefCell::new(Vec::new()),
+            edits: Log::new(),
             saving: Cell::new(false),
             timer: RefCell::new(None),
             ending: Cell::new(Ending::Open),
@@ -336,63 +339,60 @@ impl Composer {
     }
 
     /// The card.
-    pub fn root(&self) -> &gtk::Box {
+    pub(crate) fn root(&self) -> &gtk::Box {
         &self.inner.root
     }
 
     /// The window the card is docked in.
-    pub fn window(&self) -> Option<adw::ApplicationWindow> {
+    pub(crate) fn window(&self) -> Option<adw::ApplicationWindow> {
         self.inner.window()
     }
 
     /// Whether `widget` is inside the card.
-    pub fn holds(&self, widget: &gtk::Widget) -> bool {
+    pub(crate) fn holds(&self, widget: &gtk::Widget) -> bool {
         widget.is_ancestor(&self.inner.root)
             || widget == self.inner.root.upcast_ref::<gtk::Widget>()
     }
 
     /// The card's `win.` actions: the palette runs the Composer commands there.
-    pub fn action_group(&self) -> gio::ActionGroup {
+    pub(crate) fn action_group(&self) -> gio::ActionGroup {
         self.inner.group.clone().upcast()
     }
 
-    pub fn state(&self) -> CardState {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn state(&self) -> CardState {
         self.inner.state.get()
-    }
-
-    /// Minimizes the card to its header, opens it, or expands it, as its header's buttons do.
-    pub fn set_state(&self, state: CardState) {
-        self.inner.change_state(state, true);
     }
 
     /// Closes the card as its Close button does: the draft is kept (discarded when nothing was
     /// typed into a new one).
-    pub fn close(&self) {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn close(&self) {
         self.inner.close();
     }
 
-    pub fn editor(&self) -> &Editor {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn editor(&self) -> &Editor {
         &self.inner.editor
     }
 
-    pub fn id(&self) -> Option<DraftId> {
+    pub(crate) fn id(&self) -> Option<DraftId> {
         self.inner.id.get()
     }
 
-    pub fn ending(&self) -> Ending {
-        self.inner.ending.get()
-    }
-
-    pub fn is_loaded(&self) -> bool {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn is_loaded(&self) -> bool {
         self.inner.loaded.get()
     }
 
-    pub fn tray(&self) -> &Rc<Tray> {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn tray(&self) -> &Rc<Tray> {
         &self.inner.widgets.tray
     }
 
     /// The recipient row `to`, `cc` or `bcc`.
-    pub fn field(&self, name: &str) -> Option<&Rc<RecipientField>> {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn field(&self, name: &str) -> Option<&Rc<RecipientField>> {
         let widgets = &self.inner.widgets;
         match name {
             "to" => Some(&widgets.to),
@@ -402,11 +402,13 @@ impl Composer {
         }
     }
 
-    pub fn subject(&self) -> &gtk::Entry {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn subject(&self) -> &gtk::Entry {
         &self.inner.widgets.subject
     }
 
-    pub fn sender(&self) -> Option<Sender> {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn sender(&self) -> Option<Sender> {
         self.inner
             .senders
             .borrow()
@@ -415,78 +417,80 @@ impl Composer {
     }
 
     /// Who the From chip offers, in its order.
-    pub fn senders(&self) -> Vec<Sender> {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn senders(&self) -> Vec<Sender> {
         self.inner.senders.borrow().clone()
     }
 
-    pub fn select_sender(&self, index: usize) {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn select_sender(&self, index: usize) {
         if let Some(popover) = self.inner.widgets.from.popover() {
             popover.popdown();
         }
         self.inner.choose_sender(index);
     }
 
-    pub fn warning(&self) -> Option<String> {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn warning(&self) -> Option<String> {
         let warning = &self.inner.widgets.warning;
         warning.is_visible().then(|| warning.label().to_string())
     }
 
-    pub fn saved_label(&self) -> Option<String> {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn saved_label(&self) -> Option<String> {
         let saved = &self.inner.widgets.saved;
         saved.is_visible().then(|| saved.label().to_string())
     }
 
-    /// When each edit (of the body or a field) happened.
-    pub fn edits(&self) -> Vec<Instant> {
-        self.inner.edits.borrow().clone()
+    /// When each edit (of the body or a field) happened, while a self-test records.
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn edits(&self) -> Vec<Instant> {
+        self.inner.edits.entries()
     }
 
     /// The commands this window ran, oldest first.
-    pub fn ran(&self) -> Vec<ActionId> {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn ran(&self) -> Vec<ActionId> {
         self.inner.ran.borrow().clone()
     }
 
-    pub fn actions(&self) -> &ActionSet {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn actions(&self) -> &ActionSet {
         &self.inner.actions
     }
 
-    /// The toolbar's button for `id`.
-    pub fn format_button(&self, id: ActionId) -> Option<gtk::Button> {
-        self.inner
-            .widgets
-            .format
-            .iter()
-            .find(|(action, _)| *action == id)
-            .map(|(_, button)| button.clone())
-    }
-
-    pub fn style_label(&self) -> String {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn style_label(&self) -> String {
         self.inner.widgets.style_label.label().to_string()
     }
 
     /// A named widget of the card.
-    pub fn widget(&self, name: &str) -> Option<gtk::Widget> {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn widget(&self, name: &str) -> Option<gtk::Widget> {
         let mut found = None;
         find(self.inner.root.upcast_ref(), name, &mut found);
         found
     }
 
-    pub fn toasts(&self) -> &adw::ToastOverlay {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn toasts(&self) -> &adw::ToastOverlay {
         &self.inner.widgets.toasts
     }
 
     /// The draft as it would be saved now.
-    pub async fn draft(&self) -> Option<Draft> {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) async fn draft(&self) -> Option<Draft> {
         self.inner.collect().await
     }
 
     /// Takes `paths` as files dropped on the card: over the body, images go inline.
-    pub fn drop_files(&self, paths: Vec<PathBuf>, over_body: bool) {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn drop_files(&self, paths: Vec<PathBuf>, over_body: bool) {
         self.inner.drop_files(paths, over_body);
     }
 
     /// Takes the keys of `keymap` (keys.toml changed).
-    pub fn update_keys(&self, keymap: &Keymap) {
+    pub(crate) fn update_keys(&self, keymap: &Keymap) {
         for shortcuts in &self.inner.shortcuts {
             shortcuts.update(keymap);
         }
@@ -494,12 +498,12 @@ impl Composer {
     }
 
     /// Lets the card's resources go without saving: its window is gone.
-    pub fn release(&self) {
+    pub(crate) fn release(&self) {
         self.inner.destroyed();
     }
 
     /// Saves the draft now and lets the card go: for Quit, and for its window closing.
-    pub async fn save_and_release(&self) {
+    pub(crate) async fn save_and_release(&self) {
         let inner = &self.inner;
         if inner.ending.get() != Ending::Open {
             return;
@@ -514,6 +518,7 @@ impl Composer {
     }
 }
 
+#[cfg(feature = "test-hooks")]
 fn find(widget: &gtk::Widget, name: &str, found: &mut Option<gtk::Widget>) {
     if found.is_some() {
         return;
@@ -1412,7 +1417,7 @@ impl Inner {
                 let inner = self.clone();
                 glib::spawn_future_local(async move { inner.ready().await });
             }
-            EditorEvent::Input { .. } => self.changed(),
+            EditorEvent::Input => self.changed(),
             EditorEvent::State(state) => self.show_state(&state),
             EditorEvent::History { undo, redo } => {
                 if self.loaded.get() {
@@ -1604,7 +1609,7 @@ impl Inner {
             return;
         }
         let now = Instant::now();
-        self.edits.borrow_mut().push(now);
+        self.edits.push(now);
         self.last_edit.set(Some(now));
         if self.first_dirty.get().is_none() {
             self.first_dirty.set(Some(now));
@@ -2106,7 +2111,7 @@ impl Inner {
         let hold = self.app.upgrade().map(|app| app.hold());
         let inner = self.clone();
         glib::spawn_future_local(async move {
-            let untouched = inner.fresh.get() && inner.edits.borrow().is_empty();
+            let untouched = inner.fresh.get() && inner.last_edit.get().is_none();
             match inner.id.get() {
                 Some(id) if untouched => {
                     if inner.backend.discard(id).await.is_err() {
@@ -2172,7 +2177,7 @@ fn sender_text(sender: &Sender) -> String {
 
 /// The link a user typed, if it is one Sealwax writes: http(s) or mailto. A bare address
 /// becomes `mailto:`, a bare host `https://`.
-pub fn link_target(text: &str) -> Option<String> {
+pub(crate) fn link_target(text: &str) -> Option<String> {
     let text = text.trim();
     if text.is_empty() || text.chars().any(char::is_whitespace) {
         return None;

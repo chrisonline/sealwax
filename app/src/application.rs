@@ -15,6 +15,7 @@ use crate::default_handler;
 use crate::desktop::{self, DesktopEvent, DesktopWatch};
 use crate::engine::{self, EngineOptions};
 use crate::engine_link::{EngineLink, Subscription};
+use crate::latest_write::LatestWrite;
 use crate::list::{MessageList, Quick, Selected};
 use crate::mailbox::{self, Latch, Mailbox};
 use crate::menu;
@@ -45,7 +46,9 @@ use sealwax_domain::actions::{ActionId, Scope};
 use sealwax_domain::compose::ReplyKind;
 use sealwax_domain::keymap::Keymap;
 use sealwax_domain::layout::Layout;
-use sealwax_domain::mailto::{self, Mailto};
+#[cfg(feature = "test-hooks")]
+use sealwax_domain::mailto::Mailto;
+use sealwax_domain::mailto;
 use sealwax_domain::model::{AccountId, FolderId, FolderRole, MessageId};
 use sealwax_domain::senders::GroupBy;
 use sealwax_domain::triage::Triage;
@@ -60,11 +63,11 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 /// The installed icon (hicolor), the same for debug and release builds.
-pub const ICON_NAME: &str = "io.github.pixdevsapps.Sealwax";
+pub(crate) const ICON_NAME: &str = "io.github.pixdevsapps.Sealwax";
 
 /// Test hook: overrides the application id, so a self-test and the instances it starts share
 /// an id that no real Sealwax uses.
-pub const APP_ID_ENV: &str = "SEALWAX_APP_ID";
+pub(crate) const APP_ID_ENV: &str = "SEALWAX_APP_ID";
 
 /// The signals that end a session: uwsm stops app units with SIGTERM at logout and reboot, a
 /// closing terminal sends SIGHUP, Ctrl+C SIGINT. Linux's numbers.
@@ -116,7 +119,7 @@ impl AppConfig {
     }
 }
 
-pub fn app_id_from_env() -> String {
+pub(crate) fn app_id_from_env() -> String {
     std::env::var(APP_ID_ENV)
         .ok()
         .filter(|id| gio::Application::id_is_valid(id))
@@ -230,6 +233,7 @@ impl SealwaxApplication {
             reader_listening: Cell::new(false),
             accounts_read: Cell::new(false),
             layout: RefCell::new(None),
+            layout_writes: Rc::default(),
             keyring_missing: Cell::new(false),
             keyring_dismissed: Cell::new(false),
             network: Cell::new(true),
@@ -262,7 +266,7 @@ impl SealwaxApplication {
     }
 }
 
-pub fn run(config: AppConfig, started: Instant) -> glib::ExitCode {
+pub(crate) fn run(config: AppConfig, started: Instant) -> glib::ExitCode {
     SealwaxApplication::new(config, started).run()
 }
 
@@ -314,6 +318,8 @@ pub struct AppState {
     accounts_read: Cell<bool>,
     /// The window's remembered layout (`layout.toml`), once read.
     layout: RefCell<Option<Layout>>,
+    /// `layout.toml`'s writes, one at a time, of the latest layout.
+    layout_writes: Rc<RefCell<LatestWrite<Layout>>>,
     /// The engine keeps secrets in memory: no Secret Service answered (ML-048).
     keyring_missing: Cell<bool>,
     /// The no-keyring banner was dismissed for this session.
@@ -360,6 +366,7 @@ impl AppState {
     }
 
     /// Runs `hook` once the first window has been presented (the self-test starts there).
+    #[cfg(feature = "test-hooks")]
     pub fn connect_first_window(&self, hook: impl FnOnce(Window) + 'static) {
         self.on_first_window.replace(Some(Box::new(hook)));
     }
@@ -459,7 +466,8 @@ impl AppState {
 
     /// The accounts that must sign in again, in the sidebar's order: with Microsoft in the
     /// browser (ML-032) or with their password typed again (ML-048).
-    pub fn sign_in_needed(&self) -> Vec<Again> {
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn sign_in_needed(&self) -> Vec<Again> {
         self.waiting()
             .into_iter()
             .filter(|waiting| matches!(waiting.attention, Attention::SignIn { .. }))
@@ -633,6 +641,7 @@ impl AppState {
     }
 
     /// The `mailto:` links handed to the composer so far, oldest first (`composer::requests`).
+    #[cfg(feature = "test-hooks")]
     pub fn compose_requests(&self) -> Vec<Mailto> {
         composer::requests()
             .into_iter()
@@ -644,6 +653,7 @@ impl AppState {
     }
 
     /// How many launches and activations showed the window.
+    #[cfg(feature = "test-hooks")]
     pub fn activations(&self) -> u32 {
         self.activations.get()
     }
@@ -896,6 +906,7 @@ impl AppState {
                 return glib::ExitCode::from(error.exit_code() as u8);
             }
         };
+        #[cfg(feature = "test-hooks")]
         if parsed.self_test.is_some() {
             command_line.printerr_literal(
                 "sealwax: --self-test starts its own instance; it cannot be sent to a running \
@@ -1583,6 +1594,7 @@ impl AppState {
     }
 
     /// The ops waiting for a server, as last counted.
+    #[cfg(feature = "test-hooks")]
     pub fn pending_ops(&self) -> u32 {
         self.pending_ops.get()
     }
@@ -1593,11 +1605,13 @@ impl AppState {
     }
 
     /// Whether a message shown in the reader is marked read; the self-test switches it.
+    #[cfg(feature = "test-hooks")]
     pub fn set_mark_read_on_open(&self, on: bool) {
         self.mark_read_on_open.set(on);
     }
 
     /// When the last mail command's handler ran, and the window's frame counter then.
+    #[cfg(feature = "test-hooks")]
     pub fn triage_started(&self) -> Option<(Instant, i64)> {
         self.triage_started.get()
     }
@@ -2086,13 +2100,23 @@ impl AppState {
             .set_folded(layout.folded.clone().into_iter().collect());
         self.mailbox.set_view(layout.view.clone());
         self.layout.replace(Some(layout.clone()));
+        let Some(first) = self.layout_writes.borrow_mut().offer(layout) else {
+            return;
+        };
+        let writes = self.layout_writes.clone();
         let path = self.config.dirs.layout_file();
         glib::spawn_future_local(async move {
-            let written =
-                gio::spawn_blocking(move || sealwax_infrastructure::layout::write(&path, &layout))
-                    .await;
-            if let Ok(Err(error)) = written {
-                tracing::warn!(%error, "the window's layout can't be saved");
+            let mut next = Some(first);
+            while let Some(layout) = next {
+                let path = path.clone();
+                let written = gio::spawn_blocking(move || {
+                    sealwax_infrastructure::layout::write(&path, &layout)
+                })
+                .await;
+                if let Ok(Err(error)) = written {
+                    tracing::warn!(%error, "the window's layout can't be saved");
+                }
+                next = writes.borrow_mut().finished();
             }
         });
     }

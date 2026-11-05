@@ -1,7 +1,7 @@
 //! The main window's compose commands (M6: ML-068, ML-069, ML-074): Compose, Reply, Reply All,
 //! Forward and Edit Draft from the list, the reader, the palette and their keys, and what the
 //! reader asks for itself (the cards' buttons, the quick reply's expansion). Every one opens a
-//! window through `composer::open`. The quick reply's Send goes through [`quick_send`], the seam
+//! window through `composer::open`. The quick reply's Send goes through `send_quick`, the seam
 //! phase B wires to the outbox.
 //!
 //! - **Compose** writes from the account the list shows; in All Inboxes from the selected
@@ -20,6 +20,7 @@ use crate::composer::{self, ComposeRequest};
 use crate::list::{MessageList, Selected};
 use crate::outbox;
 use crate::reader::Reader;
+use crate::test_hooks::{self, Log};
 use crate::triage::Target;
 use crate::window::Window;
 use gtk4::glib;
@@ -36,7 +37,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 /// The commands this module handles.
-pub const COMMANDS: [ActionId; 6] = [
+pub(crate) const COMMANDS: [ActionId; 6] = [
     ActionId::Compose,
     ActionId::Reply,
     ActionId::ReplyAll,
@@ -46,7 +47,7 @@ pub const COMMANDS: [ActionId; 6] = [
 ];
 
 /// Connects the compose commands to the window's actions.
-pub fn install(state: &Rc<AppState>, window: &Window, actions: &ActionSet) {
+pub(crate) fn install(state: &Rc<AppState>, window: &Window, actions: &ActionSet) {
     for id in COMMANDS {
         let weak = Rc::downgrade(state);
         let target = window.window().downgrade();
@@ -62,7 +63,7 @@ pub fn install(state: &Rc<AppState>, window: &Window, actions: &ActionSet) {
 
 /// The reader's own requests open composer windows too; its quick reply sends, and keeps its
 /// text as a draft, through the composer's backend (`composer::backend`).
-pub fn connect_reader(reader: &Reader, window: &Window) {
+pub(crate) fn connect_reader(reader: &Reader, window: &Window) {
     let target = window.window().downgrade();
     reader.connect_compose(move |request| {
         if let Some(window) = target.upgrade() {
@@ -98,7 +99,12 @@ pub fn connect_reader(reader: &Reader, window: &Window) {
 /// Reply, Reply All, Reply to Sender and Forward apply to one selected message that isn't a
 /// draft; Edit Draft to one in a Drafts folder. `targets` are the selected messages whose rows
 /// are loaded.
-pub fn refresh(actions: &ActionSet, list: &MessageList, targets: &[Target], folders: &[Folder]) {
+pub(crate) fn refresh(
+    actions: &ActionSet,
+    list: &MessageList,
+    targets: &[Target],
+    folders: &[Folder],
+) {
     let one = matches!(list.reported(), Selected::One(_));
     let draft = one
         && targets
@@ -118,7 +124,7 @@ pub fn refresh(actions: &ActionSet, list: &MessageList, targets: &[Target], fold
 
 /// Opening a message of a Drafts folder (Enter, `o`, a double click) edits it in the composer
 /// rather than showing it (the user's choice at the M6 gate); true when it did.
-pub fn open_if_draft(state: &AppState, window: &Window, message: MessageId) -> bool {
+pub(crate) fn open_if_draft(state: &AppState, window: &Window, message: MessageId) -> bool {
     let Some(list) = state.list() else {
         return false;
     };
@@ -170,7 +176,7 @@ fn request_for(state: &AppState, id: ActionId) -> Option<ComposeRequest> {
 
 /// Whom Reply and the quick reply answer: the sender, or everyone with `[reader] reply = "all"`
 /// (issue #8).
-pub fn reply_kind(state: &AppState) -> ReplyKind {
+pub(crate) fn reply_kind(state: &AppState) -> ReplyKind {
     match state.preferences().map(|prefs| prefs.config().reader.reply) {
         Some(DefaultReply::All) => ReplyKind::ReplyAll,
         _ => ReplyKind::Reply,
@@ -192,7 +198,7 @@ fn message_for(list: &MessageList, reader: Option<&Reader>) -> Option<MessageId>
 /// The account a new message is written from: the one whose folder the list shows; in All
 /// Inboxes the selected message's (`selected` is its folder); `None` leaves it to the composer,
 /// which takes the first account.
-pub fn compose_account(
+pub(crate) fn compose_account(
     scope: Option<ViewScope>,
     selected: Option<FolderId>,
     folders: &[Folder],
@@ -210,13 +216,14 @@ pub fn compose_account(
 }
 
 thread_local! {
-    /// Every quick reply Send was asked for in this process, oldest first.
-    static QUICK_SENDS: RefCell<Vec<(MessageId, String)>> = const { RefCell::new(Vec::new()) };
+    /// Every quick reply Send was asked for while a self-test records, oldest first.
+    static QUICK_SENDS: Log<(MessageId, String)> = const { Log::new() };
 }
 
-/// Every quick reply Send was asked for in this process, oldest first; the self-tests read it.
-pub fn quick_sends() -> Vec<(MessageId, String)> {
-    QUICK_SENDS.with(|sends| sends.borrow().clone())
+/// Every quick reply Send was asked for while a self-test records (`test_hooks`), oldest first.
+#[cfg(feature = "test-hooks")]
+pub(crate) fn quick_sends() -> Vec<(MessageId, String)> {
+    QUICK_SENDS.with(Log::entries)
 }
 
 /// The quick reply's Send (M6 phase B): the reply prepared by the compose rules
@@ -225,7 +232,9 @@ pub fn quick_sends() -> Vec<(MessageId, String)> {
 /// message's id is logged, never the text.
 async fn send_quick(app: &SealwaxApplication, message: MessageId, text: String) -> bool {
     tracing::info!(id = message.0, "quick reply send requested");
-    QUICK_SENDS.with(|sends| sends.borrow_mut().push((message, text.clone())));
+    if test_hooks::recording() {
+        QUICK_SENDS.with(|sends| sends.push((message, text.clone())));
+    }
     let backend = composer::backend(app);
     let refuse = |why: &str| {
         let toast = adw::Toast::builder()
@@ -262,8 +271,8 @@ async fn send_quick(app: &SealwaxApplication, message: MessageId, text: String) 
 
 /// How long the quick reply's text rests before it is saved as a draft, and the most it waits
 /// while the typing goes on (PRD C5: at most 5 s behind the typing).
-pub const QUICK_SAVE_IDLE: Duration = Duration::from_secs(2);
-pub const QUICK_SAVE_AT_MOST: Duration = Duration::from_secs(5);
+pub(crate) const QUICK_SAVE_IDLE: Duration = Duration::from_secs(2);
+pub(crate) const QUICK_SAVE_AT_MOST: Duration = Duration::from_secs(5);
 
 /// One message's quick reply as a draft.
 #[derive(Default)]
@@ -416,7 +425,7 @@ async fn keep(
 
 /// The plain text of a body that is nothing but the editor's lines (`compose::text::to_html`'s
 /// output); `None` for anything else (formatting, a quote, a signature).
-pub fn typed_text(html: &str) -> Option<String> {
+pub(crate) fn typed_text(html: &str) -> Option<String> {
     let mut lines = Vec::new();
     let mut rest = html;
     while !rest.is_empty() {

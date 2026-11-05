@@ -3,7 +3,10 @@
 //! IMAP and SMTP servers over TLS with a throwaway CA. The servers take XOAUTH2 with the access
 //! tokens the token endpoint issued; SMTP, like Outlook's (S5), only as the token's identity.
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "shared by several test binaries, each using a part"
+)]
 
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
@@ -131,8 +134,12 @@ impl Microsoft {
             codes: HashMap::new(),
         }));
         let shared = state.clone();
+        let local = listener.local_addr().unwrap();
         tokio::spawn(async move {
-            while let Ok((stream, _)) = listener.accept().await {
+            while let Ok((stream, peer)) = listener.accept().await {
+                if sealwax_infrastructure::loopback::from_outside(peer, local) {
+                    continue;
+                }
                 tokio::spawn(http(stream, shared.clone()));
             }
         });
@@ -356,9 +363,13 @@ where
 {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
+    let local = listener.local_addr().unwrap();
     let acceptor = tokio_rustls::TlsAcceptor::from(tls.server.clone());
     tokio::spawn(async move {
-        while let Ok((tcp, _)) = listener.accept().await {
+        while let Ok((tcp, peer)) = listener.accept().await {
+            if sealwax_infrastructure::loopback::from_outside(peer, local) {
+                continue;
+            }
             let Ok(stream) = acceptor.accept(tcp).await else {
                 continue;
             };

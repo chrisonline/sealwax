@@ -24,7 +24,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 /// The commands this module adds to the script format, with their argument counts.
-pub const COMMANDS: &[(&str, usize, usize)] = &[
+pub(super) const COMMANDS: &[(&str, usize, usize)] = &[
     // Before the app starts; only before every other step but `desktop`.
     ("store-dir", 1, 1),
     ("fixtures", 1, usize::MAX),
@@ -76,6 +76,10 @@ pub const COMMANDS: &[(&str, usize, usize)] = &[
     ("list-select-group", 1, 1),
     ("assert-list-groups", 1, 1),
     ("assert-list-group", 4, 5),
+    // Group by's date sections and times (issue #26).
+    ("assert-list-group-sections", 1, 1),
+    ("assert-list-group-headers", 1, 1),
+    ("assert-list-group-time", 2, 2),
 ];
 
 thread_local! {
@@ -93,7 +97,7 @@ thread_local! {
 /// `store-dir PATH` makes PATH the data folder (store and blobs) instead of the scratch one;
 /// `fixtures ARGS…` runs `sealwax-fixtures import --store … --blobs … ARGS…` into it (skipped when
 /// `store-dir` names a folder that already holds a store).
-pub fn before_start(steps: &[Step], dirs: &mut SealwaxDirs) -> Result<(), String> {
+pub(super) fn before_start(steps: &[Step], dirs: &mut SealwaxDirs) -> Result<(), String> {
     let mut leading = true;
     let mut chosen = false;
     for step in steps {
@@ -1022,6 +1026,32 @@ async fn check(harness: &Harness, assertion: &str, args: &[String]) -> StepResul
             equal("sections", actual.join(",").as_str(), arg(0))
         }
         "assert-list-headers" => equal("headers", list.headers().join(",").as_str(), arg(0)),
+        "assert-list-group-sections" => {
+            let actual: Vec<String> = list
+                .group_section_counts()
+                .iter()
+                .zip(crate::list::sections::LABELS)
+                .filter(|(count, _)| **count > 0)
+                .map(|(count, label)| format!("{label}:{count}"))
+                .collect();
+            equal("group sections", actual.join(",").as_str(), arg(0))
+        }
+        "assert-list-group-headers" => equal(
+            "group headers",
+            list.group_headers().join(",").as_str(),
+            arg(0),
+        ),
+        "assert-list-group-time" => {
+            let groups = list.shown_groups().ok_or("the list shows no groups")?;
+            let group = groups
+                .get(number(arg(0))?)
+                .ok_or_else(|| format!("no group {}", arg(0)))?;
+            equal(
+                "time",
+                list.group_time(&group.key).unwrap_or_default().as_str(),
+                arg(1),
+            )
+        }
         "assert-list-selected" => {
             let selected = list
                 .selected_position()
