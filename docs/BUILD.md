@@ -6,13 +6,14 @@ Synced: 2026-10-09
 
 | Item | Version on the development machine (2026-10-04) |
 | --- | --- |
-| Rust (rustup, stable) | 1.98.1; MSRV 1.92 |
+| Rust (rustup, stable) | 1.98.1; MSRV 1.92 (`rustup toolchain install 1.92`: `tools/ci.sh` checks it) |
 | GTK 4 | 4.22.4 |
 | libadwaita | 1.9.3 |
 | WebKitGTK 6.0 | 2.52.6 |
 | SQLite | 3.53.4 |
 | GLib / GIO | 2.88.3 |
 | libsecret | 0.21.7 (gnome-keyring 50 provides the Secret Service) |
+| cargo-deny | 0.20.2 (`cargo install --locked cargo-deny`; `tools/ci.sh` runs it offline, `deny.toml`) |
 
 Arch packages needed to build: `gtk4`, `libadwaita`, `webkitgtk-6.0`, `sqlite`, `pkgconf`, `rust` (or rustup). Optional at runtime: `gnome-keyring` (or another Secret Service provider), `hunspell` with a hunspell dictionary (such as `hunspell-en_us`) for spell check: a dictionary alone isn't enough.
 
@@ -24,10 +25,10 @@ Not installed here (no action needed for M0): mold/lld, rust-analyzer, blueprint
 cargo build                       # the app (default member)
 cargo build --workspace           # every crate
 cargo test --workspace
-bash tools/ci.sh                  # fmt, clippy -D warnings, tests, build
+bash tools/ci.sh                  # fmt, clippy -D warnings, the MSRV check, rustdoc -D warnings, cargo deny, tests, build
 SEALWAX_CI_DISPLAY=19 bash tools/ci.sh --ui   # plus a headless smoke run, the self-test scripts and the hostile suite
 bash tools/ci.sh --testbed        # plus every testbed suite (see Mail testbed)
-tools/headless.sh 19 target/debug/sealwax --self-test tests/selftest/window.sealwax-test
+tools/headless.sh 19 target/debug/sealwax-selftest --self-test tests/selftest/window.sealwax-test
 cargo run -p sealwax -- --version
 ```
 
@@ -36,12 +37,13 @@ cargo run -p sealwax -- --version
 | Crate | Path | Role |
 | --- | --- | --- |
 | `sealwax-domain` | `domain/` | Pure logic |
-| `sealwax-infrastructure` | `infrastructure/` | Local std I/O, logging |
+| `sealwax-infrastructure` | `infrastructure/` | Local std I/O, logging; the store's suites are one test binary, `tests/store/`, with the `test-support` feature (the schema steps and internals they check, the loopback lookup) |
 | `sealwax-engine` | `engine/` | tokio: network, sync, op queue, secrets |
-| `sealwax` | `app/` | GTK app, binary `sealwax` |
+| `sealwax` | `app/` | GTK app, binary `sealwax` (as released: no self-test code) |
+| `sealwax-uitest` | `uitest/` | `sealwax-selftest`, Sealwax with the app's `test-hooks` feature (the self-test runner, the sample mail, the stand-in composer backend), and the harnesses in `uitest/examples/` (hostile, reader_*, composer_live, notify_live, palette, theme_*); never packaged (ADR-025 amendment). Not a default member: `cargo build -p sealwax-uitest` |
 | `sealwax-fixtures` | `devtools/fixtures/` | Synthetic `.eml` corpora, import and store benchmarks, `bench-conversation` (workspace glob `devtools/*`, `publish = false`) |
 | `sealwax-dns-canary` | `devtools/dns-canary/` | A preloadable `getaddrinfo` that records and refuses every name looked up, for the hostile suite (M5) |
-| `email-spike-s1` … `email-spike-s7` | `spikes/<id>-<topic>/` | M0 measurement code, one crate per spike (workspace glob `spikes/*`) |
+| `email-spike-s1` … `email-spike-s7` | `archive/spikes/<id>-<topic>/` | M0 measurement code, one crate per spike: a workspace of its own with its own `Cargo.lock`, excluded from this one and not built by `tools/ci.sh` ([archive/spikes/README.md](../archive/spikes/README.md), ADR-025) |
 | `sealwax-fuzz` | `fuzz/` | libFuzzer targets (M9, ML-093); a workspace of its own, excluded from this one, built by `tools/fuzz.sh` |
 | `lettre` (patched) | `vendor/lettre/` | lettre 0.11.23 with a 16 KiB reply-line limit, used through `[patch.crates-io]` here and in `fuzz/`; excluded from the workspace ([vendor/README.md](../vendor/README.md), ADR-015 amendment of 2026-10-13) |
 | `imap-proto` (patched) | `vendor/imap-proto/` | imap-proto 0.17.0 with upstream's nesting limit for BODYSTRUCTURE and body extensions and Sealwax's three changes for Proton Mail Bridge's replies (ADR-006 amendment of 2026-11-03), used through `[patch.crates-io]` here and in `fuzz/`; excluded from the workspace ([vendor/README.md](../vendor/README.md), ADR-006 amendment of 2026-10-25) |
@@ -68,7 +70,7 @@ Always give `--store` a scratch path; the app's own store is `SealwaxDirs::from_
 
 ```bash
 python3 tools/corpus/fetch.py                  # the real-world corpus into .local/corpus/real/ (open-licensed templates, checked by SHA-256)
-cargo build --release -p sealwax --example reader_corpus --example reader_memory
+cargo build --release -p sealwax-uitest --example reader_corpus --example reader_memory
 SEALWAX_OMARCHY_STATE=$PWD/.local/reader-examples/corpus-theme SEALWAX_HEADLESS_TIMEOUT=900 \
     tools/headless.sh 33 target/release/examples/reader_corpus [--previews]
 SEALWAX_HEADLESS_TIMEOUT=600 tools/headless.sh 31 target/release/examples/reader_memory
@@ -80,20 +82,20 @@ The fetch makes anonymous HTTPS GETs of public files with a generic User-Agent; 
 
 ```sh
 tools/kill9-compose.sh 46 10        # kill -9 while composing: seconds of typing lost per run (bar 5 s)
-cargo build --release -p sealwax --example composer_live
+cargo build --release -p sealwax-uitest --example composer_live
 tools/headless.sh 45 target/release/examples/composer_live          # dry run (Broadway)
 target/release/examples/composer_live --live                        # authorized live runs only
 ```
 
-`kill9-compose.sh` (debug build first: `cargo build`) runs Sealwax headless on a scratch store under `.local/kill9/`, types into a composer every 200 ms, kills it with SIGKILL at a random moment, starts it again on the same folders and reads the reopened draft; about 12 s a run, so it isn't in `tools/ci.sh`. `composer_live` times an edit to the painted frame in the real composer's editor (S7's method: WebKit's `InsertText`, a paint probe, no key events) in a small document and above a 199 KB quoted thread, then scrolls the quote; it makes no input, uses scratch XDG folders, writes its report under `.local/reader/`, and ends by itself. The testbed's sending suites (`send_testbed`, `append_testbed`, `outbox_testbed`) run under `tools/ci.sh --testbed`; `SEALWAX_OUTBOX_SEEDS` sets the outbox suite's seeds (2 by default).
+`kill9-compose.sh` (debug build first: `cargo build -p sealwax-uitest`) runs Sealwax headless on a scratch store under `.local/kill9/`, types into a composer every 200 ms, kills it with SIGKILL at a random moment, starts it again on the same folders and reads the reopened draft; about 12 s a run, so it isn't in `tools/ci.sh`. `composer_live` times an edit to the painted frame in the real composer's editor (S7's method: WebKit's `InsertText`, a paint probe, no key events) in a small document and above a 199 KB quoted thread, then scrolls the quote; it makes no input, uses scratch XDG folders, writes its report under `.local/reader/`, and ends by itself. The testbed's sending suites (`send_testbed`, `append_testbed`, `outbox_testbed`) run under `tools/ci.sh --testbed`; `SEALWAX_OUTBOX_SEEDS` sets the outbox suite's seeds (2 by default).
 
 ## Search, notification and background measurements (M7)
 
 ```sh
-cargo build --release -p sealwax
-SEALWAX_HEADLESS_TIMEOUT=900 tools/headless.sh 53 target/release/sealwax --self-test tests/selftest/perf-search.sealwax-test   # key → results at 100,000
-python3 tools/testbed/notify_e2e.py 21          # new mail in background mode, end to end on the testbed (debug build first)
-cargo build -p sealwax --example notify_live
+cargo build --release -p sealwax-uitest
+SEALWAX_HEADLESS_TIMEOUT=900 tools/headless.sh 53 target/release/sealwax-selftest --self-test tests/selftest/perf-search.sealwax-test   # key → results at 100,000
+python3 tools/testbed/notify_e2e.py 21          # new mail in background mode, end to end on the testbed (cargo build -p sealwax-uitest first)
+cargo build -p sealwax-uitest --example notify_live
 tools/headless.sh 56 target/debug/examples/notify_live            # dry run (the stand-in clicks)
 target/debug/examples/notify_live --live                          # authorized live runs only: the user clicks
 ```
@@ -105,7 +107,7 @@ target/debug/examples/notify_live --live                          # authorized l
 ```sh
 SEALWAX_TESTBED_CA=$PWD/tools/testbed/certs/ca.pem cargo test -p sealwax-engine --release --test pop3_testbed -- --ignored --test-threads=1
 SEALWAX_TESTBED_CA=$PWD/tools/testbed/certs/ca.pem cargo test -p sealwax-engine --release --test pop3_accounts_testbed -- --ignored --test-threads=1
-tools/headless.sh 21 target/debug/sealwax --self-test tests/selftest/testbed-pop3-setup.sealwax-test
+tools/headless.sh 21 target/debug/sealwax-selftest --self-test tests/selftest/testbed-pop3-setup.sealwax-test
 ```
 
 `pop3_testbed` (the client: Dovecot's and Stalwart's POP3 over both securities, alice read-only, `popclient`'s own INBOX for deletions, cuts through the fault proxy; `SEALWAX_POP3_SEEDS` sets its fault runs, 5 by default) and `pop3_accounts_testbed` (an account's actor end to end on `popclient`) also run under `tools/ci.sh --testbed`. `testbed-pop3-setup` adds a POP3 account through the assistant on Stalwart's POP3 (port 16995): never point it at Dovecot's alice, since Dovecot marks downloaded mail read when the POP3 session ends. `engine/tests/pop3.rs` (a scripted server), `pop3_log.rs` and `pop3_accounts.rs` (a fake maildrop) run in CI.
@@ -167,7 +169,7 @@ They read two overrides that release builds ignore ([SECURITY.md](SECURITY.md#cr
 The testbed end to end through the real engine and the setup assistant (not in CI; start and seed the testbed first, and stop it after):
 
 ```bash
-tools/headless.sh 33 target/debug/sealwax --self-test tests/selftest/testbed-setup.sealwax-test
+tools/headless.sh 33 target/debug/sealwax-selftest --self-test tests/selftest/testbed-setup.sealwax-test
 bash tools/ci.sh --testbed
 ```
 
@@ -175,7 +177,7 @@ Triage end to end (M4): prepare the user `triage` (every folder emptied, eight s
 
 ```bash
 SEALWAX_TESTBED_CA=$PWD/tools/testbed/certs/ca.pem python3 tools/testbed/triage_mailbox.py fill dovecot stalwart
-tools/headless.sh 25 target/debug/sealwax --self-test tests/selftest/testbed-triage.sealwax-test
+tools/headless.sh 25 target/debug/sealwax-selftest --self-test tests/selftest/testbed-triage.sealwax-test
 SEALWAX_TESTBED_CA=$PWD/tools/testbed/certs/ca.pem python3 tools/testbed/triage_mailbox.py show dovecot stalwart
 ```
 
@@ -193,7 +195,7 @@ SEALWAX_TESTBED_CA=$PWD/tools/testbed/certs/ca.pem python3 tools/testbed/triage_
 - the icon under `packaging/icons/hicolor/`: PNGs from 16 to 512 px of the vector mail icon in `packaging/icons/source/sealwax-icon.svg` (2026-10-20, this fork; the wax seal before), and that SVG as the scalable icon. `python3 tools/make-icons.py packaging/icons` regenerates them with librsvg (`rsvg-convert`);
 - `licenses/`, the standard MIT and Apache-2.0 texts for crates whose source has no license file: `MIT.txt` is unarray 0.1.4's `LICENSE-MIT` and `Apache-2.0.txt` is autocfg 1.5.0's `LICENSE-APACHE`, copied unchanged.
 
-**Third-party licenses** (the owner's decision D17, 2026-10-21): the package carries `/usr/share/licenses/sealwax/THIRD-PARTY-LICENSES.txt` beside the MIT `LICENSE`, with the licenses of every crate the binary is built from. `python3 tools/licenses.py` makes it (Python's standard library and Cargo only), by default into `target/THIRD-PARTY-LICENSES.txt`; `--output PATH` writes it elsewhere, `--manifest-path` reads another checkout and `--offline` stops Cargo downloading missing crates. The crates are those `cargo tree -p sealwax -e normal,build --target x86_64-unknown-linux-gnu` lists: normal and build dependencies with the binary's own features, so dev-dependencies, the spikes, devtools and fuzz stay out, and so do the 29 crates that `cargo metadata`'s graph alone would add because other workspace members turn on features the binary doesn't use (aws-lc-rs and quinn among them, 2026-10-21). Sealwax's own crates are left out; the vendored lettre is in, marked as part of Sealwax's source. From each crate's folder (`cargo metadata`) the file takes every `LICENSE*`, `LICENCE*`, `COPYING*`, `COPYRIGHT*`, `NOTICE*` and `UNLICENSE*` file and `LICENSES/`, line endings made `\n`, and prints a text that several crates ship byte for byte once, with the crates and file names it belongs to; MIT and BSD texts carry their copyright lines, so each crate's own file is kept. A crate with no license file gets `packaging/licenses/`'s text for each licence in its expression, headed with the authors from its `Cargo.toml` (names only); the script prints those crates, and stops when a licence has no text there (add it, copied from another crate's file). It also prints the crates whose expression names a copyleft licence or none. The output is sorted and holds no date, version or path of the machine, so it changes only when the dependencies do. `python3 tools/test_licenses.py` (run by `tools/ci.sh`) checks the walk on a small offline workspace.
+**Third-party licenses** (the owner's decision D17, 2026-10-21): the package carries `/usr/share/licenses/sealwax/THIRD-PARTY-LICENSES.txt` beside the MIT `LICENSE`, with the licenses of every crate the binary is built from. `python3 tools/licenses.py` makes it (Python's standard library and Cargo only), by default into `target/THIRD-PARTY-LICENSES.txt`; `--output PATH` writes it elsewhere, `--manifest-path` reads another checkout and `--offline` stops Cargo downloading missing crates. The crates are those `cargo tree -p sealwax -e normal,build --target x86_64-unknown-linux-gnu` lists: normal and build dependencies with the binary's own features, so dev-dependencies, the spikes, devtools and fuzz stay out, and so do the 29 crates that `cargo metadata`'s graph alone would add because other workspace members turn on features the binary doesn't use (aws-lc-rs and quinn among them, 2026-10-21). A package built on aarch64 carries the same x86_64 list: aarch64's crates are that list without `core_detect` and `cpufeatures`, so none goes unlisted (2026-11-09). Sealwax's own crates are left out; the vendored lettre is in, marked as part of Sealwax's source. From each crate's folder (`cargo metadata`) the file takes every `LICENSE*`, `LICENCE*`, `COPYING*`, `COPYRIGHT*`, `NOTICE*` and `UNLICENSE*` file and `LICENSES/`, line endings made `\n`, and prints a text that several crates ship byte for byte once, with the crates and file names it belongs to; MIT and BSD texts carry their copyright lines, so each crate's own file is kept. A crate with no license file gets `packaging/licenses/`'s text for each licence in its expression, headed with the authors from its `Cargo.toml` (names only); the script prints those crates, and stops when a licence has no text there (add it, copied from another crate's file). It also prints the crates whose expression names a copyleft licence or none. The output is sorted and holds no date, version or path of the machine, so it changes only when the dependencies do. `python3 tools/test_licenses.py` (run by `tools/ci.sh`) checks the walk on a small offline workspace.
 
 On 2026-10-21 (Cargo.lock of 0.5.1): 307 crates, 659,444 bytes, 191 texts. Standard texts for javascriptcore6 0.6.0, javascriptcore6-sys 0.6.0, webkit6 0.6.1 and webkit6-sys 0.6.0 (MIT) and stop-token 0.7.0 (MIT OR Apache-2.0). Copyleft named: cssparser 0.37.0 and dtoa-short 0.3.5 (MPL-2.0, through ammonia; their source is on crates.io, as the file says) and self_cell 1.3.0 (Apache-2.0 OR GPL-2.0-only, through async-imap; the OR leaves Apache-2.0 open). Regenerated with `python3 tools/licenses.py`; nothing to commit, as the file is made into `target/` or `.local/package/`.
 
@@ -209,7 +211,7 @@ Releases follow [ADR-021](DECISIONS.md#adr-021--a-public-repository-releases-on-
 
 1. **Version and notes:** set `version` in `Cargo.toml`'s `[workspace.package]` (then `cargo metadata --format-version 1 >/dev/null` and the same with `--manifest-path fuzz/Cargo.toml` update both lock files), add a `## X.Y.Z — date` section to `CHANGELOG.md` in plain words, and update the version in README, INSTALL and the user guide where they name it. Commit, run `bash tools/ci.sh --ui`, then tag: `git tag -a vX.Y.Z -m "Sealwax X.Y.Z"` and `git push origin main vX.Y.Z`.
 2. **Build:** `python3 tools/release.py build` runs `tools/package-source.py` and makepkg on the tagged commit (adding `--nodeps` where Rust isn't a pacman package), then writes to `.local/release/X.Y.Z/`: the package `sealwax-X.Y.Z-1-x86_64.pkg.tar.zst`, the same file as `sealwax-x86_64.pkg.tar.zst` (the name INSTALL.md's download command asks for through `releases/latest`), `sealwax-X.Y.Z-x86_64.tar.gz` (the package's `usr/` files, owned by root, in name order, for `sealwax-bin`), `THIRD-PARTY-LICENSES.txt` (the one in the package) and `SHA256SUMS`.
-   **Then the clean-container install test** (ML-095; for 1.0.0 and its release candidates, the owner's word on 2026-10-21): `bash tools/install-test.sh .local/release/X.Y.Z/sealwax-X.Y.Z-1-x86_64.pkg.tar.zst` installs the package with pacman in a fresh `archlinux:base` container, checks that every library the binary links is there and that the license files are installed, and runs the installed `/usr/bin/sealwax` headless over a fictional mailbox (`tests/selftest/install-smoke.sealwax-test`: the window, a message in the reader, its web process in WebKit's sandbox). The container runs with seccomp and Docker's masked `/proc` paths lifted, for that container only, so bubblewrap can make the sandbox; it is removed afterwards, and its log and screenshot go to `.local/install-test/<time>/`. Needs a running Docker daemon (`sudo systemctl start docker`, the owner's) and pacman's mirrors.
+   **Then the clean-container install test** (ML-095; for 1.0.0 and its release candidates, the owner's word on 2026-10-21): `bash tools/install-test.sh .local/release/X.Y.Z/sealwax-X.Y.Z-1-x86_64.pkg.tar.zst` installs the package with pacman in a fresh `archlinux:base` container, checks that every library the binary links is there, that the license files are installed and that `/usr/bin/sealwax` holds no self-test code, starts it headless to its first frame, and runs `sealwax-selftest` (mounted from `target/debug/`, or `SEALWAX_SELFTEST_BIN`; build it from the release's commit with `cargo build -p sealwax-uitest`) on the container's libraries over a fictional mailbox (`tests/selftest/install-smoke.sealwax-test`: the window, a message in the reader, its web process in WebKit's sandbox). The container runs with seccomp and Docker's masked `/proc` paths lifted, for that container only, so bubblewrap can make the sandbox; it is removed afterwards, and its log and screenshot go to `.local/install-test/<time>/`. Needs a running Docker daemon (`sudo systemctl start docker`, the owner's) and pacman's mirrors.
 3. **GitHub:** `python3 tools/release.py github` creates the release `vX.Y.Z` with those files and `CHANGELOG.md`'s section as its notes (`gh`, the tag already on GitHub).
 4. **AUR (not used since 2026-10-18):** `python3 tools/release.py aur` clones or pulls `ssh://aur@aur.archlinux.org/sealwax-bin.git` into `.local/aur/sealwax-bin/`, writes its PKGBUILD from the template with the version and the tarball's SHA-256 (checking that its `depends` and `optdepends` match `packaging/PKGBUILD.in`), downloads the release's tarball to verify the sum (`makepkg --verifysource`), writes `.SRCINFO` and pushes. It needs the owner's AUR account with their SSH key; `SEALWAX_AUR_SSH_KEY=<key file>` names the key when ssh doesn't find it. (Never run: the AUR closed new accounts on 2026-10-09, and the owner dropped the AUR package on 2026-10-18. The step and `packaging/aur/` are kept, unused.)
 

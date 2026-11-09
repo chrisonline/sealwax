@@ -41,7 +41,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-pub const COMMANDS: &[(&str, usize, usize)] = &[
+pub(super) const COMMANDS: &[(&str, usize, usize)] = &[
     ("outbox-draft", 2, 2),
     ("outbox-queue", 1, 1),
     ("outbox-quick", 4, 4),
@@ -63,7 +63,7 @@ thread_local! {
     static MARK: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
 }
 
-pub fn handles(command: &str) -> bool {
+pub(super) fn handles(command: &str) -> bool {
     COMMANDS.iter().any(|(name, _, _)| *name == command)
 }
 
@@ -87,7 +87,7 @@ fn store(
         .ok_or_else(|| "the store is not open".to_owned())
 }
 
-pub async fn step(harness: &Harness, command: &str, args: &[String]) -> StepResult {
+pub(super) async fn step(harness: &Harness, command: &str, args: &[String]) -> StepResult {
     let arg = |index: usize| args[index].as_str();
     match command {
         "outbox-draft" => save_draft(harness, arg(0), arg(1)).await,
@@ -128,7 +128,7 @@ pub async fn step(harness: &Harness, command: &str, args: &[String]) -> StepResu
         "assert-outbox-entries" => {
             equal("outbox entries", outbox::entries().len(), number(arg(0))?)
         }
-        "assert-stand-in" => stand_in(harness, args),
+        "assert-stand-in" => stand_in(args),
         "stand-in-mark" => {
             MARK.with(|mark| mark.set(Some(Instant::now())));
             Ok(())
@@ -408,9 +408,8 @@ async fn store_quick_draft(harness: &Harness, message: &str, text: &str) -> Step
     Ok(())
 }
 
-fn stand_in(harness: &Harness, args: &[String]) -> StepResult {
-    let stand_in =
-        composer::ensure_stand_in(&harness.app).ok_or("the backend isn't the stand-in")?;
+fn stand_in(args: &[String]) -> StepResult {
+    let stand_in = composer::stand_in().ok_or("the backend isn't the stand-in")?;
     let arg = |index: usize| args.get(index).map(String::as_str).unwrap_or_default();
     match arg(0) {
         "sent" => equal("sent", stand_in.sent().len(), number(arg(1))?),

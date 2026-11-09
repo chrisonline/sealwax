@@ -295,7 +295,7 @@ impl Inner {
                     collapse_quotes,
                     measured: None,
                     loaded: false,
-                    painted: false,
+                    painted: None,
                     released: false,
                     token: 0,
                 });
@@ -559,6 +559,7 @@ impl Inner {
     }
 
     /// Reveals a step of the shown conversation's first fold.
+    #[cfg(feature = "test-hooks")]
     pub(super) fn unfold_first(self: &Rc<Self>) {
         let first = self.shown.borrow().as_ref().and_then(|page| {
             page.entries.iter().find_map(|entry| match entry {
@@ -630,7 +631,7 @@ impl Inner {
                 };
                 if let Some(view) = &html.view {
                     html.loaded = false;
-                    html.painted = false;
+                    html.painted = None;
                     self.engine.set_parts(view.page_id(), html.parts.clone());
                     view.load(
                         &html.html,
@@ -679,8 +680,7 @@ impl Inner {
                 }
                 self.schedule();
             }
-            ViewEvent::Loaded | ViewEvent::Frame => {
-                let loaded = matches!(event, ViewEvent::Loaded);
+            ViewEvent::Loaded | ViewEvent::Frame { .. } => {
                 self.with_page(key, |page| {
                     if let Some(html) = page
                         .item_mut(id)
@@ -688,10 +688,9 @@ impl Inner {
                         .and_then(|card| card.html.as_mut())
                         .filter(|html| ours(html))
                     {
-                        if loaded {
-                            html.loaded = true;
-                        } else {
-                            html.painted = true;
+                        match event {
+                            ViewEvent::Frame { height } => html.painted = Some(*height),
+                            _ => html.loaded = true,
                         }
                     }
                 });

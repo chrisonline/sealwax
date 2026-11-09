@@ -10,6 +10,27 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **HTML signatures:** a signature can now be a designed HTML file, with your logo, colours, fonts and links, per account and per sender address ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)). Name it with `signature_html = "signatures/work/signature.html"` in `accounts.toml` and put its images beside it: they go inside the message, so recipients see the logo without loading anything from the web. If the file can't be used, the composer says why and your plain signature stands in.
 - **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
 
+## 1.2.0 — 2026-11-07
+
+The message list keeps its place.
+
+- **The list no longer jumps** ([issue #29](https://github.com/PixDevsApps/sealwax/issues/29)): in Group by Sender and Group by Domain, new mail, a message read or anything else that changed the groups could throw the selected group to the top of the window, and the arrow keys then went on from near the top of the list. Deleting or archiving a group put the next one at the top as well, and in the plain list the message after a deleted one showed a row lower than the one that went. Now the selected row stays where it is on screen, the arrow keys go on from it, and the row that comes after one you delete takes its place. The list scrolls only to show a row that is out of view.
+
+## 1.1.9 — 2026-11-05
+
+A smoother switch between messages.
+
+- **No white flash when moving to the next message:** going from one message to the next, a newsletter, receipt or other styled message showed a blank white page for a moment, and now and then a glimpse of a message read earlier, before its content came. Now the next message comes on screen as it looks.
+
+## 1.1.8 — 2026-11-05
+
+Dates in Group by, a fix for pinning senders with capitals beyond A–Z, and Sealwax's own tests out of the installed program.
+
+- **Dates in Group by** ([issue #26](https://github.com/PixDevsApps/sealwax/issues/26)): in Group by Sender and Group by Domain each group's row now shows when its newest message came, the way the plain list shows a message's time, next to its counts. And the groups are under the plain list's date headings (Today, Yesterday, This week, This month, Older) by their newest message, with the pinned groups that come first under Pinned above them.
+- **Pinning a sender whose address has capitals beyond A–Z works:** pinning a group in Group by Sender for an address such as `ÅSE@example.no` never matched its mail, and the message's menu kept offering Pin Sender. Searching `sender:` for such an address, typed as it is written, found nothing either. Now both match.
+- **A quick reply's text isn't kept after it is sent:** for its own tests, Sealwax kept the text of every quick reply, and every `mailto:` link it was handed, in memory for as long as it ran (in the background, that's until you log out). Now nothing is kept unless a test asks for it.
+- **Tests out of the installed program:** Sealwax's own tests (the scripts that drive its window, their sample mail and a stand-in for the mail store) were built into the program you install. They're now in a separate test build, so the installed `sealwax` holds none of them, and `sealwax --help` no longer lists `--self-test`.
+
 ## 1.1.7 — 2026-11-03
 
 Two fixes, and a pointer for NixOS.

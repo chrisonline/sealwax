@@ -1,11 +1,14 @@
 //! Local I/O with std only: store, blobs, configuration, Omarchy readers, logging.
 //! No network, no tokio, no GTK.
 
+#![warn(clippy::unwrap_used)]
+
 pub mod accounts;
 pub mod blobs;
 pub mod ingest;
 pub mod layout;
 pub mod logging;
+#[cfg(feature = "test-support")]
 pub mod loopback;
 pub mod omarchy;
 pub mod rules;

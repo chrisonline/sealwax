@@ -65,6 +65,7 @@ glib::wrapper! {
 }
 
 impl BodyBox {
+    #[cfg(feature = "test-hooks")]
     pub fn new(child: &impl IsA<gtk::Widget>) -> Self {
         let body = Self::empty();
         body.set_child(Some(child));
@@ -83,6 +84,7 @@ impl BodyBox {
         }
     }
 
+    #[cfg(feature = "test-hooks")]
     pub fn child(&self) -> Option<gtk::Widget> {
         self.first_child()
     }
@@ -160,6 +162,15 @@ mod stage {
             if let Some(child) = self.shown.borrow().as_ref() {
                 self.obj().snapshot_child(child, snapshot);
             }
+            // A web view takes the frames its web process rendered only when it is drawn: a
+            // page laid out unseen would come on screen with a stale frame (a blank white page,
+            // or the message its view showed before), one frame long. Drawn here at no
+            // opacity, its views keep up while it waits.
+            if let Some(child) = self.staged.borrow().as_ref() {
+                snapshot.push_opacity(0.0);
+                self.obj().snapshot_child(child, snapshot);
+                snapshot.pop();
+            }
         }
     }
 }
@@ -179,6 +190,7 @@ impl Default for Stage {
 }
 
 impl Stage {
+    #[cfg(feature = "test-hooks")]
     pub fn shown(&self) -> Option<gtk::Widget> {
         self.imp().shown.borrow().clone()
     }
@@ -246,7 +258,7 @@ impl Stage {
 /// Before `old` leaves the window: if the focus is in it, `target` takes it, or nothing does.
 /// Left to GTK 4.22, the focus moves later, from a widget no longer in the window, through the
 /// whole window's focus chain (a Gtk-CRITICAL on the way), to the first selectable label.
-pub fn hand_over_focus(old: &impl IsA<gtk::Widget>, target: Option<&gtk::Widget>) {
+pub(super) fn hand_over_focus(old: &impl IsA<gtk::Widget>, target: Option<&gtk::Widget>) {
     let old = old.as_ref();
     let Some(root) = old.root() else {
         return;

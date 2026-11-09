@@ -546,7 +546,7 @@ pub fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
 }
 
 /// Takes a v14 store back to v13, for the tests that migrate an older store.
-#[cfg(test)]
+#[cfg(feature = "test-support")]
 pub(super) const UNDO_V14: &str = "
 DROP INDEX messages_sender;
 DROP INDEX messages_domain;
@@ -556,7 +556,7 @@ PRAGMA user_version = 13;
 ";
 
 /// Takes a v14 store back to v12, for the tests that migrate an older store.
-#[cfg(test)]
+#[cfg(feature = "test-support")]
 pub(super) const UNDO_V13: &str = "
 DROP INDEX messages_sender;
 DROP INDEX messages_domain;
@@ -625,10 +625,16 @@ pub fn open_reader(path: &Path) -> Result<Connection, StoreError> {
     )?;
     conn.set_prepared_statement_cache_capacity(64);
     let version = user_version(&conn)?;
-    if version != VERSION {
+    if version > VERSION {
         return Err(StoreError::NewerSchema {
             found: version,
             supported: VERSION,
+        });
+    }
+    if version < VERSION {
+        return Err(StoreError::OlderSchema {
+            found: version,
+            expected: VERSION,
         });
     }
     Ok(conn)

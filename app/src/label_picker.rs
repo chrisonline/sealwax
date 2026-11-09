@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 /// Opens the picker on the selected messages, or on the selected group's mail.
-pub fn install_window(state: &Rc<AppState>, actions: &ActionSet) {
+pub(crate) fn install_window(state: &Rc<AppState>, actions: &ActionSet) {
     let weak = Rc::downgrade(state);
     actions.connect(ActionId::Label, move || {
         if let Some(state) = weak.upgrade() {
@@ -34,7 +34,7 @@ pub fn install_window(state: &Rc<AppState>, actions: &ActionSet) {
 }
 
 /// Whether Label… applies to the selected messages, or why not.
-pub fn applies(state: &AppState) -> Result<(), &'static str> {
+pub(crate) fn applies(state: &AppState) -> Result<(), &'static str> {
     let list = state.list().ok_or("Select a message")?;
     let targets = crate::application::loaded_targets(&list);
     let folders = state.mailbox().folders();
@@ -215,7 +215,7 @@ fn toast(state: &AppState, text: &str) {
 
 /// How many of the selected messages have a label.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Have {
+pub(crate) enum Have {
     All,
     Some,
     None,
@@ -224,7 +224,7 @@ pub enum Have {
 impl Have {
     /// Whether toggling adds the label (to every message) rather than removing it (from every
     /// message).
-    pub fn toggle_adds(self) -> bool {
+    pub(crate) fn toggle_adds(self) -> bool {
         self != Have::All
     }
 
@@ -239,11 +239,11 @@ impl Have {
 
 /// One label the picker offers.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Choice {
+pub(crate) struct Choice {
     /// The label folder.
-    pub folder: FolderId,
-    pub name: String,
-    pub have: Have,
+    pub(crate) folder: FolderId,
+    pub(crate) name: String,
+    pub(crate) have: Have,
 }
 
 impl Choice {
@@ -254,7 +254,7 @@ impl Choice {
 
 /// The labels of `account_folders` (one account's) for messages whose labels are `labels`, by
 /// name, in the order they sort in on the rows.
-pub fn choices(
+pub(crate) fn choices(
     account_folders: &[Folder],
     labels: &BTreeMap<MessageId, Vec<String>>,
 ) -> Vec<Choice> {
@@ -307,14 +307,14 @@ thread_local! {
 
 /// An open picker; [`present`] makes one.
 #[derive(Clone)]
-pub struct LabelPicker {
+pub(crate) struct LabelPicker {
     dialog: adw::Dialog,
     inner: Rc<Inner>,
 }
 
 /// Opens the picker over `window` for `count` messages, offering `choices` in their order;
 /// `toggle` gets each label toggled and whether it was added.
-pub fn present(
+pub(crate) fn present(
     window: &impl IsA<gtk::Widget>,
     choices: Vec<Choice>,
     count: u32,
@@ -330,7 +330,9 @@ pub fn present(
 }
 
 /// The picker open now, if any.
-pub fn current() -> Option<LabelPicker> {
+#[cfg(feature = "test-hooks")]
+#[allow(dead_code, reason = "for self-tests of the picker")]
+pub(crate) fn current() -> Option<LabelPicker> {
     OPEN.with(|open| open.borrow().clone())
         .filter(|picker| picker.dialog.is_mapped())
 }
@@ -393,17 +395,22 @@ impl LabelPicker {
         inner.refresh();
         Self { dialog, inner }
     }
+}
 
-    pub fn dialog(&self) -> &adw::Dialog {
+/// What self-tests read and drive.
+#[cfg(feature = "test-hooks")]
+#[allow(dead_code, reason = "for self-tests of the picker")]
+impl LabelPicker {
+    pub(crate) fn dialog(&self) -> &adw::Dialog {
         &self.dialog
     }
 
-    pub fn search_entry(&self) -> Option<gtk::SearchEntry> {
+    pub(crate) fn search_entry(&self) -> Option<gtk::SearchEntry> {
         self.inner.entry.upgrade()
     }
 
     /// The labels shown, best match first, with how many of the messages have each.
-    pub fn shown(&self) -> Vec<(String, Have)> {
+    pub(crate) fn shown(&self) -> Vec<(String, Have)> {
         let choices = self.inner.choices.borrow();
         self.inner
             .shown
@@ -414,7 +421,7 @@ impl LabelPicker {
     }
 
     /// Toggles the label Enter would toggle, as Enter does.
-    pub fn toggle_selected(&self) {
+    pub(crate) fn toggle_selected(&self) {
         self.inner.toggle_selected();
     }
 }

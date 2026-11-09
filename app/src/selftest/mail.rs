@@ -24,7 +24,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 /// The commands this module adds to the script format, with their argument counts.
-pub const COMMANDS: &[(&str, usize, usize)] = &[
+pub(super) const COMMANDS: &[(&str, usize, usize)] = &[
     // Before the app starts; only before every other step but `desktop`.
     ("store-dir", 1, 1),
     ("fixtures", 1, usize::MAX),
@@ -46,6 +46,11 @@ pub const COMMANDS: &[(&str, usize, usize)] = &[
     ("list-scroll-end", 0, 0),
     ("list-wait", 0, 0),
     ("list-remember", 0, 0),
+    // The place of the shown view and of its selected row, for `assert-list-place-kept` and
+    // `assert-list-scroll-kept` (issue #29).
+    ("list-note-place", 0, 0),
+    // Selects the group or message nearest the middle of the view, the keyboard focus with it.
+    ("list-select-middle", 0, 0),
     // Assertions.
     ("assert-list-count", 1, 1),
     // The view a window shows and the one layout.toml remembers (issue #5).
@@ -76,6 +81,14 @@ pub const COMMANDS: &[(&str, usize, usize)] = &[
     ("list-select-group", 1, 1),
     ("assert-list-groups", 1, 1),
     ("assert-list-group", 4, 5),
+    // Group by's date sections and times (issue #26).
+    ("assert-list-group-sections", 1, 1),
+    ("assert-list-group-headers", 1, 1),
+    ("assert-list-group-time", 2, 2),
+    // The list keeps its place (issue #29): the selected row is where `list-note-place` saw the
+    // selected row, and the view is scrolled as it was, within the pixels given (default 1).
+    ("assert-list-place-kept", 0, 1),
+    ("assert-list-scroll-kept", 0, 1),
 ];
 
 thread_local! {
@@ -85,6 +98,8 @@ thread_local! {
     pub(super) static ADDED: Cell<u32> = const { Cell::new(0) };
     /// The message `list-remember` noted.
     static REMEMBERED: Cell<Option<MessageId>> = const { Cell::new(None) };
+    /// What `list-note-place` saw: the shown view's scroll and its selected row's top.
+    static PLACE: Cell<Option<(f64, f32)>> = const { Cell::new(None) };
     /// Every selection the list reported, for `assert-selection-reported`.
     static REPORTED: RefCell<Option<Rc<RefCell<Vec<MessageId>>>>> = const { RefCell::new(None) };
 }
@@ -93,7 +108,7 @@ thread_local! {
 /// `store-dir PATH` makes PATH the data folder (store and blobs) instead of the scratch one;
 /// `fixtures ARGS…` runs `sealwax-fixtures import --store … --blobs … ARGS…` into it (skipped when
 /// `store-dir` names a folder that already holds a store).
-pub fn before_start(steps: &[Step], dirs: &mut SealwaxDirs) -> Result<(), String> {
+pub(super) fn before_start(steps: &[Step], dirs: &mut SealwaxDirs) -> Result<(), String> {
     let mut leading = true;
     let mut chosen = false;
     for step in steps {
@@ -227,10 +242,7 @@ pub(super) async fn run(harness: &Harness, command: &str, args: &[String]) -> Op
         },
         "list-key" => press(harness, arg(0)).await,
         "list-scroll" => match (list(harness), arg(0).parse::<f64>()) {
-            (Ok(list), Ok(value)) => {
-                list.scroller().vadjustment().set_value(value);
-                settled(harness).await
-            }
+            (Ok(list), Ok(value)) => scroll_shown(harness, &list, value).await,
             (Err(error), _) => Err(error),
             (_, Err(_)) => Err(format!("expected pixels, got {}", arg(0))),
         },
@@ -261,6 +273,36 @@ pub(super) async fn run(harness: &Harness, command: &str, args: &[String]) -> Op
                 settled(harness).await
             }
             (Err(error), _) | (_, Err(error)) => Err(error),
+        },
+        "list-select-middle" => match list(harness) {
+            Ok(list) => match middle(harness, &list).await {
+                Some(position) if list.shown_groups().is_some() => {
+                    list.select_group(position);
+                    list.groups_view().grab_focus();
+                    settled(harness).await
+                }
+                Some(position) => {
+                    list.select_position(position);
+                    list.list_view().grab_focus();
+                    settled(harness).await
+                }
+                None => Err("no row is on screen".to_owned()),
+            },
+            Err(error) => Err(error),
+        },
+        "list-note-place" => match list(harness) {
+            Ok(list) => {
+                let scroll = list.shown_scroller().vadjustment().value();
+                match list.selected_row_top() {
+                    Some(top) => {
+                        println!("  # the view is at {scroll} px, the selected row {top} px down");
+                        PLACE.with(|place| place.set(Some((scroll, top))));
+                        Ok(())
+                    }
+                    None => Err("no selected row is on screen".to_owned()),
+                }
+            }
+            Err(error) => Err(error),
         },
         "list-remember" => match list(harness) {
             Ok(list) => match list.selected() {
@@ -316,6 +358,37 @@ fn is_idle(list: &MessageList) -> bool {
 }
 
 /// Waits until the list is idle, painting frames.
+/// Scrolls what the list shows to `value` once it is that tall: the groups load after the list
+/// settles.
+async fn scroll_shown(harness: &Harness, list: &MessageList, value: f64) -> StepResult {
+    settled(harness).await?;
+    let started = Instant::now();
+    loop {
+        let adjustment = list.shown_scroller().vadjustment();
+        if adjustment.upper() - adjustment.page_size() >= value || started.elapsed() > WAIT_TIMEOUT
+        {
+            adjustment.set_value(value);
+            break;
+        }
+        harness.wait_frames(1).await?;
+    }
+    harness.wait_frames(2).await?;
+    settled(harness).await
+}
+
+/// The position of the row nearest the middle of the view, once a row is on screen.
+async fn middle(harness: &Harness, list: &MessageList) -> Option<u32> {
+    let started = Instant::now();
+    loop {
+        if let Some(position) = list.middle_position() {
+            return Some(position);
+        }
+        if started.elapsed() > WAIT_TIMEOUT || harness.wait_frames(1).await.is_err() {
+            return None;
+        }
+    }
+}
+
 pub(super) async fn settled(harness: &Harness) -> StepResult {
     let list = list(harness)?;
     let started = Instant::now();
@@ -1022,6 +1095,32 @@ async fn check(harness: &Harness, assertion: &str, args: &[String]) -> StepResul
             equal("sections", actual.join(",").as_str(), arg(0))
         }
         "assert-list-headers" => equal("headers", list.headers().join(",").as_str(), arg(0)),
+        "assert-list-group-sections" => {
+            let actual: Vec<String> = list
+                .group_section_counts()
+                .iter()
+                .zip(crate::list::sections::LABELS)
+                .filter(|(count, _)| **count > 0)
+                .map(|(count, label)| format!("{label}:{count}"))
+                .collect();
+            equal("group sections", actual.join(",").as_str(), arg(0))
+        }
+        "assert-list-group-headers" => equal(
+            "group headers",
+            list.group_headers().join(",").as_str(),
+            arg(0),
+        ),
+        "assert-list-group-time" => {
+            let groups = list.shown_groups().ok_or("the list shows no groups")?;
+            let group = groups
+                .get(number(arg(0))?)
+                .ok_or_else(|| format!("no group {}", arg(0)))?;
+            equal(
+                "time",
+                list.group_time(&group.key).unwrap_or_default().as_str(),
+                arg(1),
+            )
+        }
         "assert-list-selected" => {
             let selected = list
                 .selected_position()
@@ -1071,6 +1170,37 @@ async fn check(harness: &Harness, assertion: &str, args: &[String]) -> StepResul
                 return Err("the list grew by more than one step in a frame".to_owned());
             }
             Ok(())
+        }
+        "assert-list-place-kept" | "assert-list-scroll-kept" => {
+            let (scroll, top) = PLACE
+                .with(Cell::get)
+                .ok_or("list-note-place noted nothing")?;
+            let slack = match args.first() {
+                Some(pixels) => pixels
+                    .parse::<f64>()
+                    .map_err(|_| format!("expected pixels, got {pixels}"))?,
+                None => 1.0,
+            };
+            let now = list.shown_scroller().vadjustment().value();
+            let now_top = list.selected_row_top();
+            println!(
+                "  # the view is at {now} px (was {scroll}), the selected row {} (was {top} px)",
+                now_top.map_or("off screen".to_owned(), |top| format!("{top} px down"))
+            );
+            if assertion == "assert-list-scroll-kept" {
+                return if (now - scroll).abs() <= slack {
+                    Ok(())
+                } else {
+                    Err(format!("the view scrolled from {scroll} px to {now} px"))
+                };
+            }
+            match now_top {
+                Some(now_top) if f64::from((now_top - top).abs()) <= slack => Ok(()),
+                Some(now_top) => Err(format!(
+                    "the selected row moved from {top} px to {now_top} px down the view"
+                )),
+                None => Err("the selected row is off screen".to_owned()),
+            }
         }
         "assert-list-top" => {
             let value = list.scroller().vadjustment().value();

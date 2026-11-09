@@ -3,35 +3,30 @@
 //! keyboard focus kept out of WebKit's hidden key-binding widget, and scrolled panes Tab goes
 //! through.
 
+use crate::test_hooks::{self, Log};
 use gtk4 as gtk;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 thread_local! {
-    /// Whether announcements are kept for the self-tests (`assert-announced`).
-    static RECORDING: Cell<bool> = const { Cell::new(false) };
-    /// The announcements kept since the last [`take_announcements`].
-    static SPOKEN: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-}
-
-/// Keeps every announcement from now on, for a self-test to read back.
-pub fn record_announcements() {
-    RECORDING.with(|recording| recording.set(true));
+    /// The announcements kept for the self-tests (`assert-announced`) since the last
+    /// [`take_announcements`].
+    static SPOKEN: Log<String> = const { Log::new() };
 }
 
 /// Has a screen reader say `text` about `widget`, as when a list's chosen row moves while the
 /// keyboard focus stays in the field above it.
-pub fn announce(widget: &impl IsA<gtk::Accessible>, text: &str) {
+pub(crate) fn announce(widget: &impl IsA<gtk::Accessible>, text: &str) {
     if text.is_empty() {
         return;
     }
-    if RECORDING.with(Cell::get) {
-        SPOKEN.with(|spoken| spoken.borrow_mut().push(text.to_owned()));
+    if test_hooks::recording() {
+        SPOKEN.with(|spoken| spoken.push(text.to_owned()));
     }
     if speaks(widget.upcast_ref()) {
         widget.announce(text, gtk::AccessibleAnnouncementPriority::Medium);
@@ -62,14 +57,14 @@ fn speaks(accessible: &gtk::Accessible) -> bool {
 /// Names a button for screen readers apart from its visible label: GTK names a button by its
 /// label (a labelled-by relation, which wins over the label property), so the relation goes.
 /// For buttons whose label alone is ambiguous, such as each attachment card's "Open".
-pub fn name_button(button: &impl IsA<gtk::Widget>, name: &str) {
+pub(crate) fn name_button(button: &impl IsA<gtk::Widget>, name: &str) {
     let button = button.as_ref();
     button.reset_relation(gtk::AccessibleRelation::LabelledBy);
     button.update_property(&[gtk::accessible::Property::Label(name)]);
 }
 
 /// What a list row shows, as a screen reader would read it: its visible texts, in order.
-pub fn shown_text(widget: &impl IsA<gtk::Widget>) -> String {
+pub(crate) fn shown_text(widget: &impl IsA<gtk::Widget>) -> String {
     fn collect(widget: &gtk::Widget, parts: &mut Vec<String>) {
         // An avatar's initials repeat the name beside it.
         if !widget.is_visible() || widget.has_css_class("sw-avatar") {
@@ -93,9 +88,10 @@ pub fn shown_text(widget: &impl IsA<gtk::Widget>) -> String {
     parts.join(", ")
 }
 
-/// The announcements made since the last call, oldest first.
-pub fn take_announcements() -> Vec<String> {
-    SPOKEN.with(|spoken| spoken.take())
+/// The announcements made since the last call while a self-test records, oldest first.
+#[cfg(feature = "test-hooks")]
+pub(crate) fn take_announcements() -> Vec<String> {
+    SPOKEN.with(Log::take)
 }
 
 /// WebKitGTK parents a zero-sized GtkTextView to each web view only to translate key bindings
@@ -106,7 +102,7 @@ pub fn take_announcements() -> Vec<String> {
 /// the web view (which then goes back through the page). The widget stays focusable: made
 /// unfocusable, WebKit now and then lost the keys it hands back to the reader (`triage-keys`
 /// failed 3 runs of 4). WebKit means it hidden from screen readers, and so it is here.
-pub fn keep_focus_off_key_bindings(view: &impl IsA<gtk::Widget>) {
+pub(crate) fn keep_focus_off_key_bindings(view: &impl IsA<gtk::Widget>) {
     let view = view.as_ref();
     let focus = gtk::EventControllerFocus::new();
     // Into the key-binding widget from outside the web view: a Shift+Tab coming in.
@@ -168,7 +164,7 @@ fn hide_key_bindings(view: &gtk::Widget) {
 /// Tab and Shift+Tab leave `widget` for the next or the previous control in its window, as in
 /// a text field, instead of typing a tab: the composer's body, an editable web view, takes Tab
 /// as a character and Ctrl+Tab twice (WebKit's key bindings and the window both move).
-pub fn tab_leaves(widget: &impl IsA<gtk::Widget>) {
+pub(crate) fn tab_leaves(widget: &impl IsA<gtk::Widget>) {
     let keys = gtk::EventControllerKey::new();
     keys.set_propagation_phase(gtk::PropagationPhase::Capture);
     keys.connect_key_pressed(|keys, key, _, state| {
@@ -191,7 +187,7 @@ pub fn tab_leaves(widget: &impl IsA<gtk::Widget>) {
 
 /// Moves the keyboard focus to the first control after `widget` (before it, `backward`) in
 /// its window's Tab order, wrapping round; false when there is none.
-pub fn move_focus_past(widget: &gtk::Widget, backward: bool) -> bool {
+pub(crate) fn move_focus_past(widget: &gtk::Widget, backward: bool) -> bool {
     let Some(root) = widget.root() else {
         return false;
     };
@@ -253,7 +249,7 @@ pub fn move_focus_past(widget: &gtk::Widget, backward: bool) -> bool {
 /// still pointed at its list, and the next Tab from the sidebar went past the search field and
 /// the chips. As the focus moves, this clears what the containers the focus was in still point
 /// at, unless it leads to the focus.
-pub fn forget_stale_focus(window: &impl IsA<gtk::Window>) {
+pub(crate) fn forget_stale_focus(window: &impl IsA<gtk::Window>) {
     let around: Rc<RefCell<Vec<glib::WeakRef<gtk::Widget>>>> = Rc::default();
     window.connect_focus_widget_notify(move |window| {
         let focus = gtk::prelude::GtkWindowExt::focus(window);
@@ -316,7 +312,7 @@ glib::wrapper! {
 /// itself, so the focus stayed where it was for good: the reader's Next button with no message
 /// open, the list's last chip over an empty folder. Shift+Tab round the window's start skipped
 /// the pane instead, as GTK clears the focus before it wraps and the message list takes it back.
-pub fn tab_through(scroller: &gtk::ScrolledWindow) -> gtk::Widget {
+pub(crate) fn tab_through(scroller: &gtk::ScrolledWindow) -> gtk::Widget {
     scroller.set_focusable(false);
     let wrapper: TabThrough = glib::Object::new();
     wrapper.set_child(Some(scroller));
