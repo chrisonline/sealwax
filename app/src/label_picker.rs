@@ -241,9 +241,9 @@ impl Have {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Choice {
     /// The label folder.
-    pub folder: FolderId,
-    pub name: String,
-    pub have: Have,
+    pub(crate) folder: FolderId,
+    pub(crate) name: String,
+    pub(crate) have: Have,
 }
 
 impl Choice {
@@ -329,9 +329,9 @@ pub(crate) fn present(
     picker
 }
 
-/// The picker open now, if any (self-tests).
+/// The picker open now, if any.
 #[cfg(feature = "test-hooks")]
-#[allow(dead_code, reason = "for self-tests that drive the picker")]
+#[allow(dead_code, reason = "for self-tests of the picker")]
 pub(crate) fn current() -> Option<LabelPicker> {
     OPEN.with(|open| open.borrow().clone())
         .filter(|picker| picker.dialog.is_mapped())
@@ -395,22 +395,21 @@ impl LabelPicker {
         inner.refresh();
         Self { dialog, inner }
     }
+}
 
-    #[cfg(feature = "test-hooks")]
-    #[allow(dead_code, reason = "for self-tests that drive the picker")]
+/// What self-tests read and drive.
+#[cfg(feature = "test-hooks")]
+#[allow(dead_code, reason = "for self-tests of the picker")]
+impl LabelPicker {
     pub(crate) fn dialog(&self) -> &adw::Dialog {
         &self.dialog
     }
 
-    #[cfg(feature = "test-hooks")]
-    #[allow(dead_code, reason = "for self-tests that drive the picker")]
     pub(crate) fn search_entry(&self) -> Option<gtk::SearchEntry> {
         self.inner.entry.upgrade()
     }
 
     /// The labels shown, best match first, with how many of the messages have each.
-    #[cfg(feature = "test-hooks")]
-    #[allow(dead_code, reason = "for self-tests that drive the picker")]
     pub(crate) fn shown(&self) -> Vec<(String, Have)> {
         let choices = self.inner.choices.borrow();
         self.inner
@@ -422,8 +421,6 @@ impl LabelPicker {
     }
 
     /// Toggles the label Enter would toggle, as Enter does.
-    #[cfg(feature = "test-hooks")]
-    #[allow(dead_code, reason = "for self-tests that drive the picker")]
     pub(crate) fn toggle_selected(&self) {
         self.inner.toggle_selected();
     }
