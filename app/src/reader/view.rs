@@ -52,7 +52,7 @@ const HEIGHT_JS: &str = r#"(() => {
   const frame = () => {
     const mine = ++ticket;
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (mine === ticket) post('frame', {load, height: window.innerHeight});
+      if (mine === ticket) post('frame', {load, height: window.innerHeight, width: window.innerWidth});
     }));
   };
   const measure = () => {
@@ -664,7 +664,7 @@ pub enum ViewEvent {
         height: i32,
         width: i32,
     },
-    /// WebKit rendered a frame of the document with a viewport this tall (px): after its
+    /// WebKit rendered a frame of the document with a viewport this tall (GTK's px): after its
     /// first paint, and after each resize.
     Frame { height: i32 },
     /// The document's `load` event: its images, `cid:` parts included, are in.
@@ -959,6 +959,8 @@ impl MessageView {
             self.ucm.connect_script_message_received(
                 Some(name),
                 glib::clone!(
+                    #[weak(rename_to = view)]
+                    self.view,
                     #[strong]
                     state,
                     move |_, value| {
@@ -971,9 +973,16 @@ impl MessageView {
                             return;
                         }
                         state.emit(if name == "frame" {
-                            ViewEvent::Frame {
-                                height: number("height") as i32,
-                            }
+                            // The viewport's CSS px, in GTK's px as the view's size request is
+                            // (under GNOME's text scaling the two never match otherwise, and
+                            // every styled body would wait out READY_TIMEOUT).
+                            let (height, _) = to_widget_px(
+                                number("height"),
+                                number("width"),
+                                view.width(),
+                                font_zoom(),
+                            );
+                            ViewEvent::Frame { height }
                         } else {
                             ViewEvent::Loaded
                         });

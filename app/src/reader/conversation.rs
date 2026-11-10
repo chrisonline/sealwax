@@ -140,10 +140,14 @@ impl HtmlBody {
     }
 
     /// The view has painted a frame at the height it has now: shown, it draws the body, not a
-    /// blank page in the body's background while WebKit renders it at that height.
+    /// blank page in the body's background while WebKit renders it at that height. Within two
+    /// pixels: under GNOME's text scaling the viewport's height comes back from WebKit's zoomed
+    /// CSS px, rounded.
     pub(super) fn painted_at_height(&self) -> bool {
         self.view.as_ref().is_none_or(|view| {
-            self.painted == Some(view.web_view().size_request().1.max(1))
+            let height = view.web_view().size_request().1.max(1);
+            self.painted
+                .is_some_and(|painted| (painted - height).abs() <= 2)
         })
     }
 }
