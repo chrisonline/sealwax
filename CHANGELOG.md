@@ -10,6 +10,26 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **HTML signatures:** a signature can now be a designed HTML file, with your logo, colours, fonts and links, per account and per sender address ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)). Name it with `signature_html = "signatures/work/signature.html"` in `accounts.toml` and put its images beside it: they go inside the message, so recipients see the logo without loading anything from the web. If the file can't be used, the composer says why and your plain signature stands in.
 - **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
 
+## 1.2.1 — 2026-11-09
+
+Folders with a backslash or a quote in their name.
+
+- **A folder with `\` or `"` in its name no longer stops the account syncing** ([issue #31](https://github.com/PixDevsApps/sealwax/issues/31), [PR #33](https://github.com/PixDevsApps/sealwax/pull/33), thanks @mlamoure): Sealwax read such a name from the server with its escapes still in it and escaped it again when asking about the folder, so the server didn't know the name. One such folder was enough to leave the whole account empty, as on a Proton Mail Bridge account with a backslash in a folder name. Sealwax now reads the name as the server meant it, and the folder syncs.
+- **Certificate checks refuse the distrusted emSign intermediates:** the library that checks mail servers' certificates is updated to `rustls-webpki` 0.103.16 (RUSTSEC-2026-0382).
+- **Building from source on ARM needs no edit** ([issue #30](https://github.com/PixDevsApps/sealwax/issues/30)): the package recipe now lists `aarch64`. There's no ARM package to download, and the project hasn't built or run Sealwax on ARM itself.
+
+## 1.2.0 — 2026-11-07
+
+The message list keeps its place.
+
+- **The list no longer jumps** ([issue #29](https://github.com/PixDevsApps/sealwax/issues/29)): in Group by Sender and Group by Domain, new mail, a message read or anything else that changed the groups could throw the selected group to the top of the window, and the arrow keys then went on from near the top of the list. Deleting or archiving a group put the next one at the top as well, and in the plain list the message after a deleted one showed a row lower than the one that went. Now the selected row stays where it is on screen, the arrow keys go on from it, and the row that comes after one you delete takes its place. The list scrolls only to show a row that is out of view.
+
+## 1.1.9 — 2026-11-05
+
+A smoother switch between messages.
+
+- **No white flash when moving to the next message:** going from one message to the next, a newsletter, receipt or other styled message showed a blank white page for a moment, and now and then a glimpse of a message read earlier, before its content came. Now the next message comes on screen as it looks.
+
 ## 1.1.8 — 2026-11-05
 
 Dates in Group by, a fix for pinning senders with capitals beyond A–Z, and Sealwax's own tests out of the installed program.

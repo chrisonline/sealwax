@@ -76,6 +76,73 @@ Each milestone's exit criteria are the acceptance list. Results go here as dated
 
 ## Results
 
+### 1.2.0 — 2026-11-07
+
+This machine. The changes since 1.1.9: `c3bfc5a` (the send fault suite's expected reason), `43aeefe` (the list keeps its place, issue #29, below) and the version commit `d455a27` (Cargo.toml 1.2.0, both lock files, README, CHANGELOG "1.2.0 — 2026-11-07").
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `SEALWAX_CI_DISPLAY=39 bash tools/ci.sh --ui` on the version commit | Exit 0: fmt, both Clippy runs, MSRV, rustdoc, deny; 1,455 tests passed, 0 failed, 92 ignored; 89 self-test scripts, 8,620 of 8,620 steps (`list-steady` 55 of 55); hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0` | Pass |
+| The push range (`a334c8d..d455a27`, 3 commits) scanned before pushing | No working doc or link to one, no home path, user name or hostname, nothing of the unreleased IMAP fix | Pass |
+| `v1.2.0` on `d455a27`, `main` and the tag pushed | GitHub's `main` is `d455a27`, `v1.2.0` the tag object `32ca1dd` | Pass |
+| `python3 tools/release.py build` on `v1.2.0` | Finished 14:14 CET: `check()` 1,179 passed, 0 failed; `SHA256SUMS` checks for all four files; the package's binary says `sealwax 1.2.0`, has no home path, user name, hostname or `--self-test`, and carries the Microsoft client ID; package SHA-256 `1496c934df79f86b5158b9f6a681e4ed0977ff1813d05d0e3ad5e34f9516a6cc` | Pass |
+| The clean-container install test (`bash tools/install-test.sh` on the package, `sealwax-selftest` from CI's build of `d455a27`) | `/usr/bin/sealwax` reaches its first frame; `install-smoke` 16 of 16 steps in a fresh `archlinux:base` container (`.local/install-test/20261107-141425`) | Pass |
+| The release [v1.2.0](https://github.com/PixDevsApps/sealwax/releases/tag/v1.2.0) (`tools/release.py github`, 13:15:03 UTC) | GitHub's latest; its five files; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` downloads the same bytes as the build | Pass |
+
+### The list keeps its place (issue #29) — 2026-11-07
+
+This machine, headless on Broadway, then on the live session. The new self-test `tests/selftest/list-steady.sealwax-test` (600 fixtures, 1440×900) selects the row nearest the middle of the view, notes where it is, and checks after each change that the view and the selected row stayed (`assert-list-scroll-kept`, `assert-list-place-kept`, within 1 px).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `list-steady` before the change (4 runs) | 45 of 55 steps, the same 10 failures each run: in Group by Sender new mail below or above the view and Delete put the selected group 8 px from the top (331 → 8 px, 387 → 8 px); Down after such a refresh left the screen and the next refresh scrolled near the start of the list (3447 → 56 px); in the plain list Delete moved the view up one row (8000 → 7908 px) | Fail (the bug) |
+| `list-steady` after the change | 55 of 55: the selected row stays put on new mail; Down moves the selection one row without scrolling; after Delete the next row is where the deleted one was, in both lists | Pass |
+| `splice` unit tests | 7 passed: the same rows change nothing, one row on top or at the bottom is one insertion, a removal is one removal, a moved row moves alone, a row that may not stay moves even in place, mixed changes and empty lists, runs | Pass |
+| The list, triage, Group by and related self-tests (26 scripts) | All passed | Pass |
+| On the live session (`tools/live/try.sh`, release build, the fictional mailbox, All Inboxes in Group by Sender; keys with `wtype`, screenshots with `grim`) | Down ×12 to the 13th group: no scroll. `s` (Starred 27 messages, a groups refresh): the selected row stayed, the view unscrolled. Down ×2 after it: on from that row. Delete: the next group took its place, no scroll. `z`: the group came back above, the selection kept its place. Modifier keys sent by `wtype` didn't reach GTK, so Mark as Unread wasn't used; the plain list's Delete wasn't tried live | Pass |
+
+### 1.1.9 — 2026-11-05
+
+This machine. The changes since 1.1.8: `5057733` (the reader's white flash, below) and the version commit `103a652` (Cargo.toml 1.1.9, both lock files, README, CHANGELOG "1.1.9 — 2026-11-05").
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `SEALWAX_CI_DISPLAY=47 bash tools/ci.sh --ui` on the version commit | Exit 0: fmt, both Clippy runs, MSRV, rustdoc, deny; 1,448 tests passed, 0 failed, 92 ignored; 88 self-test scripts, 8,565 of 8,565 steps; hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0` | Pass |
+| The push range (`eb5a6b3..103a652`, 2 commits) scanned before pushing | No working doc or link to one, no home path, user name or hostname | Pass |
+| `v1.1.9` on `103a652`, `main` and the tag pushed | GitHub's `main` is `103a652`, `v1.1.9` the tag object `aba2f0b` | Pass |
+| `python3 tools/release.py build` on `v1.1.9` | Finished 16:28 CET: `check()` 1,179 passed, 0 failed; `SHA256SUMS` checks for all four files; the package's binary says `sealwax 1.1.9`, has no home path, user name, hostname or `--self-test`, and carries the Microsoft client ID; package SHA-256 `63fbd5e4abbd62a630c627306aec1a01f0dc8ec8647ca710b1ec55ed0efc6803` | Pass |
+| The clean-container install test (`bash tools/install-test.sh` on the package, `sealwax-selftest` from CI's build of `103a652`) | `/usr/bin/sealwax` reaches its first frame; `install-smoke` 16 of 16 steps in a fresh `archlinux:base` container (`.local/install-test/20261105-162822`) | Pass |
+| The release [v1.1.9](https://github.com/PixDevsApps/sealwax/releases/tag/v1.1.9) (`tools/release.py github`, 15:29:02 UTC) | GitHub's latest; its five files; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` downloads the same bytes as the build | Pass |
+
+### The reader's white flash between messages — 2026-11-05
+
+This machine, headless on Broadway (software rendering), the change on `main` at `eb5a6b3` (committed as `5057733`, released in 1.1.9). The new harness `uitest/examples/reader_flash.rs` opens the samples one after another through `Reader::show_next` (as the list does) under a dark Omarchy theme and reads back every frame GTK paints for 600 ms after each open; a frame brighter than both the message left and the one it settles on is a flash.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| Cause, from the saved frames (debug build, before the change) | The first frame after the swap showed a staged web view's stale frame: a blank white page at the body's new height (receipt), or the body of an earlier message its pooled view had shown (dark-promo) | Found |
+| `reader_flash`, release, before the change (2 runs) | 3 flash frames per run (receipt, each time); dark-promo also passed through a frame of another message | Fail |
+| `reader_flash`, release, after the change (2 runs) | 0 flash frames; every open goes straight from the old message to the new one. Show → on screen for styled bodies 58–83 ms before, 72–91 ms after (about one frame more) | Pass |
+| `reader_flash`, debug build, after the change | 1 flash frame in one run: debug opens take 150–170 ms, past `LEFT_SHOWN` (150 ms), so a body shows before it is laid out, as designed | Not judged (debug speed) |
+| `SEALWAX_CI_DISPLAY=47 bash tools/ci.sh --ui` after the change | Exit 0: 1,448 tests passed, 0 failed, 92 ignored; 88 self-test scripts, 8,565 of 8,565 steps; hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0` | Pass |
+| On the live session | Not verified | — |
+
+### 1.1.8 — 2026-11-05
+
+This machine. The changes since 1.1.7: phases 0–2 of the architecture cleanup (`cda1074`..`29e4b47`, their results below), `6e8b5ea` (WebKit's checks as one test), `1b88269` (the engine's mock servers skip connections from outside the test), `262e769` (dates in Group by, issue #26) and the version commit `fddb8c1` (Cargo.toml 1.1.8, both lock files, README, CHANGELOG "1.1.8 — 2026-11-05", DESIGN.md's #26 line).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `list-group-dates` (new: Group by's sections, headers and times by sender and by domain, a pin until read, midnight; `tools/headless.sh 38`) | 61 of 61 steps in 3 runs in a row; `list-senders` 130 of 130, `list-pinned` 169 of 169, `list-sections` 57 of 57 | Pass |
+| The store's pinned groups with `leads` (`pinned_groups_match_a_model`, 60 random mailboxes; `pinned_groups_come_first_in_the_inboxes`) | The 8 pin tests passed | Pass |
+| The group query before and after `leads` (an outer query around the grouping), on a copy of the 100,000-message INBOX of `target/perf-list/data` migrated to v14, two sender pins, Group by Sender, `sqlite3` 3.50.6 | The same rows in the same order; 0.143–0.150 s before, 0.141–0.144 s after (wall time, 5 runs each, a CI run alongside) | Pass |
+| `SEALWAX_CI_DISPLAY=41 bash tools/ci.sh --ui` on the version commit, outside any network namespace | Exit 0: fmt, both Clippy runs, MSRV, rustdoc, deny; the binary holds no self-test code; 1,448 tests passed, 0 failed, 92 ignored; 88 self-test scripts, 8,565 of 8,565 steps; hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0` | Pass |
+| The push range (`1b88269..fddb8c1`, 2 commits) scanned before pushing | No working doc or link to one, no home path, user name or hostname | Pass |
+| `v1.1.8` on `fddb8c1`, `main` and the tag pushed | GitHub's `main` is `fddb8c1`, `v1.1.8` the tag object `6f8673e` | Pass |
+| `python3 tools/release.py build` on `v1.1.8` (no namespace) | Finished 11:28 CET: `check()` 1,179 passed, 0 failed; `SHA256SUMS` checks for all four files; the package's binary says `sealwax 1.1.8`, has no home path, user name, hostname or `--self-test`, and carries the Microsoft client ID; package SHA-256 `9e049e401a0f992085d3dc3d043bb2ca3c34fdb58074d115ba9fd719a8d537e9` | Pass |
+| The clean-container install test (`bash tools/install-test.sh` on the package, `sealwax-selftest` from CI's build of `fddb8c1`) | `/usr/bin/sealwax` reaches its first frame; `install-smoke` 16 of 16 steps in a fresh `archlinux:base` container (`.local/install-test/20261105-112859`) | Pass |
+| The release [v1.1.8](https://github.com/PixDevsApps/sealwax/releases/tag/v1.1.8) (`tools/release.py github`, 10:29:37 UTC) | GitHub's latest; its five files; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` downloads the same bytes as the build | Pass |
+
 ### Architecture cleanup, phase 2 — 2026-11-04
 
 Test code out of the released binary (`test-hooks`, `uitest/`, `sealwax-selftest`), the app's modules private, `app/src/webview.rs`, the store's suites in `infrastructure/tests/store/` (ADR-025 amendment). This machine, debug builds.
