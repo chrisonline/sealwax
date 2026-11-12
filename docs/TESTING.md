@@ -76,6 +76,34 @@ Each milestone's exit criteria are the acceptance list. Results go here as dated
 
 ## Results
 
+### 1.2.2: async-imap reads a response once — 2026-11-03
+
+This machine (AMD Ryzen 9 5900X), on a local branch. The change and its tests: [vendor/README.md](../vendor/README.md), [ADR-006 amendment](DECISIONS.md#adr-006-amendment--async-imap-frames-a-response-before-parsing-it-and-its-parse-errors-hold-no-response-2026-11-03).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| The vendored async-imap's own tests (a copy with the vendored imap-proto outside the repository, `cargo test`) | 84 passed with `runtime-tokio`, 78 with `runtime-async-std`, 0 failed; among them a 1 MB FLAGS response in 1 KiB pieces parsed once (and test-parsed 13 times before its end), five responses with literals in pieces of 1 to 4,096 bytes, 200 random mixes the same as imap-proto reading them whole | Pass |
+| The report's cases, release builds, one run each, load average about 1.4: 1.1.6's vendored copy, then the change (one write / 16 KiB writes / 1 KiB writes) | FLAGS 1 MB 0.73 s / 0.73 s / 0.73 s → 18 ms / 13 ms / 12 ms; FLAGS 4 MB 12.25 s / 12.13 s / 12.18 s → 57 ms / 55 ms / 52 ms; SEARCH 4 MB 8.30 s / 8.10 s / 8.09 s → 37 ms / 37 ms / 37 ms; a 4 MB quoted string 0.82 s → 5 ms; the error after a 10 MB literal and one wrong byte 80,000,234 bytes (0x01) and 50,000,234 bytes (`a`) → 63 bytes | Pass |
+| `a_long_reply_without_literals_is_read_at_once` (`engine/tests/long_reply.rs`, a 2 MB FLAGS reply through the fake server, test build) | 0.70 s with the change; with 1.1.6's `imap_stream.rs` put back, 67 s and the test fails | Pass |
+
+### 1.2.1 — 2026-11-09
+
+This machine. The changes since 1.2.0: `0b0fdf1` (`rustls-webpki` 0.103.16), `2fca700` (`aarch64` in `arch=`, issue #30), `ee3aa8f` (quoted mailbox names decoded once, issue #31, PR #33 by @mlamoure) and the version commit `0e6f6dd` (Cargo.toml 1.2.1, both lock files, README, CHANGELOG "1.2.1 — 2026-11-09").
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `vendor/imap-proto`'s own tests at `ee3aa8f`, from a copy outside the repository | 105 passed | Pass |
+| `folder_names_with_backslashes_and_quotes_sync_on_every_flavour` with and without the change in `vendor/imap-proto/src/rfc3501/mod.rs` | Passes with it; without it fails with `Labels\Archive not stored` | Pass |
+| `SEALWAX_CI_DISPLAY=39 bash tools/ci.sh --ui --testbed` on the version commit | Exit 0: fmt, both Clippy runs, MSRV, rustdoc, deny; 1,456 tests passed, 0 failed, 92 ignored; 89 self-test scripts, 8,620 of 8,620 steps; hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`; 16 testbed suites, 82 tests passed, 0 failed | Pass |
+| Names with `\` and `"` on real servers (a temporary test, not kept: CREATE `Sealwax tmp31 back\slash`, `Sealwax tmp31 say "hi"` and `Sealwax tmp31 both\"and\\`, then `imap::sync_folders`, on the version commit) | Dovecot, Dovecot IMAP4rev1 and Stalwart: 3 of 3 names created, each discovered under its exact name with its STATUS | Pass |
+| Proton Mail Bridge, the server of issue #31 | Not run here. The reporter's account: 37 folders listed and synced with the patched build (their report on #31) | Not verified here |
+| ARM (`arch=`) | Nothing built or run on ARM | Not verified |
+| The push range (`2fca700..0e6f6dd`, 2 commits) scanned before pushing | No working doc or link to one, no home path, hostname or personal data beyond the usual commit author, nothing of the unreleased IMAP fix | Pass |
+| `v1.2.1` on `0e6f6dd`, `main` and the tag pushed | GitHub's `main` is `0e6f6dd`, `v1.2.1` the tag object `49f0b3d`; PR #33 merged, #31 closed by it | Pass |
+| `python3 tools/release.py build` on `v1.2.1` | Finished 23:13 CET: `check()` 1,180 passed, 0 failed; `SHA256SUMS` checks for all four files; the package's binary says `sealwax 1.2.1`, has no home path, email address, hostname or `--self-test`; package SHA-256 `c7655e0e5d9e84bf0c48dac326dadbb0a1807014da406754972fcd566aaa301d` | Pass |
+| The clean-container install test (`bash tools/install-test.sh` on the package, `sealwax-selftest` from the version commit) | `install-smoke` 16 of 16 steps in a fresh `archlinux:base` container (`.local/install-test/20261109-231333`) | Pass |
+| The release [v1.2.1](https://github.com/PixDevsApps/sealwax/releases/tag/v1.2.1) (`tools/release.py github`, 22:14:26 UTC) | GitHub's latest; its five files; `releases/latest/download/sealwax-x86_64.pkg.tar.zst` downloads the same bytes as the build | Pass |
+
 ### 1.2.0 — 2026-11-07
 
 This machine. The changes since 1.1.9: `c3bfc5a` (the send fault suite's expected reason), `43aeefe` (the list keeps its place, issue #29, below) and the version commit `d455a27` (Cargo.toml 1.2.0, both lock files, README, CHANGELOG "1.2.0 — 2026-11-07").

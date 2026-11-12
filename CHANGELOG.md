@@ -10,6 +10,12 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **HTML signatures:** a signature can now be a designed HTML file, with your logo, colours, fonts and links, per account and per sender address ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)). Name it with `signature_html = "signatures/work/signature.html"` in `accounts.toml` and put its images beside it: they go inside the message, so recipients see the logo without loading anything from the web. If the file can't be used, the composer says why and your plain signature stands in.
 - **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
 
+## 1.2.2 — 2026-11-11
+
+A security update. Please update.
+
+- **A mail server can't keep Sealwax busy with one long reply:** Sealwax read a long reply again from its start every time another 4 KiB of it arrived, so a reply of a few megabytes without attachments (a long list of flags or search results) could take seconds of processor time, and a server, or anyone on the network before the connection is encrypted, could send one after another. Now Sealwax reads each reply once, when all of it has arrived. And a reply Sealwax can't read no longer makes a copy of itself several times its size in memory ([GHSA-p76c-f9r4-p56x](https://github.com/PixDevsApps/sealwax/security/advisories/GHSA-p76c-f9r4-p56x)).
+
 ## 1.2.1 — 2026-11-09
 
 Folders with a backslash or a quote in their name.
