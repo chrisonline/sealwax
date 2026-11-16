@@ -147,7 +147,7 @@ impl Running {
     /// "synced".
     async fn add(&mut self, fake: &Fake, request: u64, name: &str) -> AccountId {
         let settings = AccountSettings {
-            key: AccountKey(String::new()),
+            key: AccountKey::unassigned(),
             name: name.into(),
             label: None,
             color: None,
@@ -460,7 +460,7 @@ async fn failed_connections_back_off_and_reconnect_tries_at_once() {
     run.send(Command::AddAccount {
         request: 1,
         settings: AccountSettings {
-            key: AccountKey(String::new()),
+            key: AccountKey::unassigned(),
             name: "Backoff".into(),
             label: None,
             color: None,
@@ -961,7 +961,7 @@ async fn two_accounts_sync_at_once_and_the_engine_stops_quickly() {
         run.send(Command::AddAccount {
             request,
             settings: AccountSettings {
-                key: AccountKey(String::new()),
+                key: AccountKey::unassigned(),
                 name: name.into(),
                 label: None,
                 color: None,

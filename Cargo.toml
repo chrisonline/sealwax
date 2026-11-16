@@ -1,11 +1,11 @@
 [workspace]
-members = ["app", "domain", "infrastructure", "engine", "uitest", "devtools/*"]
+members = ["app", "domain", "ui-model", "infrastructure", "engine", "uitest", "devtools/*"]
 exclude = ["fuzz", "archive/spikes", "vendor/lettre", "vendor/imap-proto", "vendor/async-imap"]
-default-members = ["app", "domain", "infrastructure", "engine"]
+default-members = ["app", "domain", "ui-model", "infrastructure", "engine"]
 resolver = "3"
 
 [workspace.package]
-version = "1.2.2"
+version = "1.5.0"
 edition = "2024"
 rust-version = "1.92"
 license = "MIT"
@@ -13,6 +13,7 @@ publish = false
 
 [workspace.dependencies]
 sealwax-domain = { path = "domain" }
+sealwax-ui-model = { path = "ui-model" }
 sealwax-infrastructure = { path = "infrastructure" }
 sealwax-engine = { path = "engine" }
 gtk4 = { version = "0.11.5", features = ["v4_18"] }
@@ -26,7 +27,7 @@ tokio = { version = "1.53", default-features = false, features = ["rt-multi-thre
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tempfile = "3.27"
-rusqlite = "0.40.2"
+rusqlite = "0.43.0"
 mail-parser = { version = "~0.11.9", features = ["full_encoding"] }
 html2text = "~0.17.1"
 webkit6 = { version = "0.6.1", features = ["v2_52"] }
@@ -52,7 +53,7 @@ hickory-resolver = { version = "0.26.3", default-features = false, features = ["
 quick-xml = "0.42.0"
 psl = "2.1"
 idna = "1.1"
-ammonia = "~4.1.5"
+ammonia = "~4.1.9"
 html5ever = "0.39"
 mail-builder = { version = "~1.0.0", default-features = false }
 oo7 = "0.6"

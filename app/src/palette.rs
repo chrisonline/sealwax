@@ -8,9 +8,9 @@ use gtk4::prelude::*;
 use gtk4::{gdk, gio, glib};
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use sealwax_domain::actions::{ActionId, Scope};
-use sealwax_domain::keymap::Keymap;
-use sealwax_domain::palette;
+use sealwax_ui_model::actions::{ActionId, Scope};
+use sealwax_ui_model::keymap::Keymap;
+use sealwax_ui_model::fuzzy;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -304,7 +304,7 @@ impl Inner {
         };
         let query = entry.text();
         let texts: Vec<String> = self.items.iter().map(Item::search_text).collect();
-        let shown: Vec<Item> = palette::rank(&query, texts.iter().map(String::as_str))
+        let shown: Vec<Item> = fuzzy::rank(&query, texts.iter().map(String::as_str))
             .into_iter()
             .map(|index| self.items[index].clone())
             .collect();

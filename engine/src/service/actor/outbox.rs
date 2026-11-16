@@ -37,8 +37,9 @@ use crate::imap::write::{self, Append, Mark, OpFolder, WriteError, WriteFailure}
 use crate::secrets::{SecretKind, SecretStore};
 use crate::smtp::submit::{self, Envelope, SubmitError, SubmitFailure, Submitter};
 use sealwax_domain::account::{AccountSettings, AuthMethod, LoginFailure};
+use sealwax_domain::autoconfig::presets;
+use sealwax_domain::compose::Draft;
 use sealwax_domain::compose::mime::{self, BuildError, Field};
-use sealwax_domain::compose::{Draft, address};
 use sealwax_domain::model::{AccountId, DraftId, Flags, FolderRole};
 use sealwax_infrastructure::blobs::BlobStore;
 use sealwax_infrastructure::store::{
@@ -56,19 +57,8 @@ pub(super) fn server_saves_sent(settings: &AccountSettings) -> bool {
     if matches!(settings.auth, AuthMethod::OAuth(_)) {
         return true;
     }
-    let host = settings
-        .smtp
-        .host
-        .trim_end_matches('.')
-        .to_ascii_lowercase();
-    [
-        "office365.com",
-        "outlook.com",
-        "gmail.com",
-        "googlemail.com",
-    ]
-    .iter()
-    .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
+    let host = &settings.smtp.host;
+    presets::microsoft_host(host) || presets::google_host(host)
 }
 
 /// The message as it goes out: what the store records at the start, and its bytes.
@@ -188,7 +178,7 @@ fn build_failure(draft: &Draft, error: BuildError) -> (SendFailure, SendError) {
             SendFailure::RecipientsRefused,
             SendError::RecipientsRefused(
                 list.iter()
-                    .filter(|recipient| address::ascii(&recipient.email).is_none())
+                    .filter(|recipient| sealwax_domain::address::wire(&recipient.email).is_none())
                     .map(|recipient| recipient.email.clone())
                     .collect(),
             ),
@@ -473,7 +463,7 @@ impl Submission {
         match settings.auth {
             AuthMethod::Password => {
                 let password = secrets
-                    .read(&settings.key.0, SecretKind::Password)
+                    .read(settings.key.as_str(), SecretKind::Password)
                     .await
                     .map_err(|error| {
                         tracing::warn!(%error, "the account's password couldn't be read");
@@ -1211,7 +1201,7 @@ mod tests {
             certificate: None,
         };
         AccountSettings {
-            key: AccountKey("k".into()),
+            key: AccountKey::parse("k").unwrap(),
             name: "n".into(),
             label: None,
             color: None,

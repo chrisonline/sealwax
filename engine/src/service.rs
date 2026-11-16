@@ -182,7 +182,7 @@ impl Kept {
     fn fits(&self, address: &str) -> bool {
         [&self.address, &self.username]
             .iter()
-            .any(|own| own.trim().eq_ignore_ascii_case(address.trim()))
+            .any(|own| sealwax_domain::address::same(own, address))
     }
 }
 
@@ -974,7 +974,7 @@ async fn password(shared: &Shared, settings: &AccountSettings) -> Result<Secret,
     shared
         .secrets()
         .await
-        .read(&settings.key.0, SecretKind::Password)
+        .read(settings.key.as_str(), SecretKind::Password)
         .await
         .map_err(|error| {
             tracing::warn!(%error, "the account's password couldn't be read");
@@ -1332,7 +1332,7 @@ async fn store_sign_in(
     accounts
         .secrets
         .store(
-            &settings.key.0,
+            settings.key.as_str(),
             SecretKind::RefreshToken,
             &secret_label(&settings.address),
             kept.refresh.as_bytes(),
@@ -1408,7 +1408,7 @@ async fn store_password(
     accounts
         .secrets
         .store(
-            &settings.key.0,
+            settings.key.as_str(),
             SecretKind::Password,
             &secret_label(&settings.address),
             password.expose().as_bytes(),

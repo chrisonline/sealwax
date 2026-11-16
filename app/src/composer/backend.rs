@@ -8,7 +8,9 @@
 //! engine's work happens on their own threads.
 
 use super::ComposeRequest;
-use sealwax_domain::compose::Draft;
+use super::editor::InlineImage;
+use sealwax_domain::compose::{Draft, DraftPart};
+use sealwax_domain::compose::identity::SignatureBlock;
 use sealwax_domain::model::{AccountId, Address, DraftId};
 use sealwax_infrastructure::blobs::BlobStore;
 use std::future::Future;
@@ -27,9 +29,21 @@ pub(crate) struct Sender {
     pub label: String,
     /// The sender name and address the message goes out with.
     pub address: Address,
-    /// Its signature (`accounts.toml`: its HTML signature, else its plain one); the composer
-    /// swaps it in when the sender changes.
-    pub signature: Option<sealwax_domain::compose::identity::Signature>,
+    /// Its signature, plain text (`accounts.toml`); the composer swaps it in when the sender
+    /// changes.
+    pub signature: Option<String>,
+    /// Its HTML signature's file under the signatures folder (issue #6), used in place of
+    /// `signature` when it can be read.
+    pub signature_html: Option<String>,
+}
+
+/// An HTML signature ready to insert: its block, its images as the editor's inline parts by
+/// Content-ID (their bytes already in the blob store), and a designed signature's styled HTML
+/// as the draft's hidden part (issue #6), stored too.
+pub(crate) struct HtmlSignature {
+    pub block: SignatureBlock,
+    pub images: Vec<(String, InlineImage)>,
+    pub styled: Option<(String, DraftPart)>,
 }
 
 /// What a composer window starts from.
@@ -42,9 +56,9 @@ pub(crate) struct Prepared {
     pub senders: Vec<Sender>,
     /// The header's title: "New message", "Reply", "Forward" or "Draft".
     pub title: String,
-    /// What the composer tells the user as it opens: an HTML signature that couldn't be used
-    /// (issue #6), whose plain signature stands in.
-    pub notices: Vec<String>,
+    /// A message started now, not a draft opened again: its sender's HTML signature goes in
+    /// once the editor is ready (issue #6).
+    pub fresh: bool,
 }
 
 /// An address the user has written to or heard from, for the suggestions.
@@ -76,6 +90,12 @@ pub(crate) trait Backend {
     fn submission_limit(&self, account: AccountId) -> Local<Option<u64>>;
     /// Where attachments and inline images go; `None` until the store is open.
     fn blobs(&self) -> Option<BlobStore>;
+    /// The HTML signature `path` names (issue #6), its images given Content-IDs on `domain`;
+    /// an error says why it can't be used.
+    fn html_signature(&self, path: String, domain: String) -> Local<Result<HtmlSignature, String>> {
+        let _ = (path, domain);
+        Box::pin(async { Err("HTML signatures need the mail store".to_owned()) })
+    }
 }
 
 /// The right-hand side of the composer's Message-IDs and Content-IDs: the sender's domain in

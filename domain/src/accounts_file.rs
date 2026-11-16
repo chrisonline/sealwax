@@ -6,10 +6,12 @@
 //! layout survive the assistant's writes.
 
 use crate::account::{
-    AccountColor, AccountKey, AccountSettings, AuthMethod, CertificatePin, Endpoint, HtmlSignature,
-    Identity, OAuthProvider, Pop3Policy, Protocol, Receive, Security, is_loopback,
+    AccountColor, AccountKey, AccountSettings, AuthMethod, CertificatePin, Endpoint, Identity,
+    OAuthProvider, Pop3Policy, Protocol, Receive, Security, is_loopback, is_valid_key,
 };
-use crate::config::{FileError, article, did_you_mean, entries, parse_toml};
+use crate::address::{is_sendable, looks_like_address, same};
+use crate::settings_file::{FileError, article, did_you_mean, entries, parse_toml};
+use std::fmt;
 use std::net::Ipv6Addr;
 use std::ops::Range;
 use toml::Spanned;
@@ -17,8 +19,6 @@ use toml::de::{DeTable, DeValue};
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, Value, value};
 
 pub const ACCOUNTS_FILE: &str = "accounts.toml";
-/// The longest key a hand-written account may have.
-pub const MAX_KEY_LENGTH: usize = 40;
 
 const ACCOUNT_SETTINGS: [&str; 13] = [
     "key",
@@ -44,15 +44,6 @@ const IDENTITY_SETTINGS: [&str; 4] = ["name", "address", "signature", "signature
 /// The longest signature, in characters.
 pub const MAX_SIGNATURE_CHARS: usize = 10_000;
 
-/// Whether `key` can name an account: 1 to 40 of `a`–`z`, `0`–`9`, `-` and `_`. Generated keys
-/// are 12 characters of lowercase base32; hand-written ones may be words ("work").
-pub fn is_valid_key(key: &str) -> bool {
-    (1..=MAX_KEY_LENGTH).contains(&key.len())
-        && key
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"-_".contains(&byte))
-}
-
 /// The port a connection uses when `accounts.toml` names none.
 pub fn default_port(protocol: Protocol, security: Security) -> u16 {
     match (protocol, security) {
@@ -63,6 +54,21 @@ pub fn default_port(protocol: Protocol, security: Security) -> u16 {
         (Protocol::Pop3, Security::Tls) => 995,
         (Protocol::Pop3, Security::StartTls) => 110,
     }
+}
+
+/// Whether `path` can name an HTML signature: relative, at most 255 characters, no control
+/// characters, no `..` or empty step, and an `.html` or `.htm` file.
+pub fn is_signature_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    !path.is_empty()
+        && path.chars().count() <= 255
+        && !path.starts_with('/')
+        && !path.contains('\\')
+        && !path.chars().any(char::is_control)
+        && path
+            .split('/')
+            .all(|step| !step.is_empty() && step != "." && step != "..")
+        && (lower.ends_with(".html") || lower.ends_with(".htm"))
 }
 
 /// A field name that looks like it holds a secret.
@@ -78,20 +84,6 @@ fn secret_message(name: &str) -> String {
         "{name} looks like a password or token: Sealwax keeps those in the keyring, never in \
          accounts.toml; remove this line"
     )
-}
-
-/// Whether `address` looks like an email address: one `@` with text on both sides, no spaces.
-pub fn is_valid_address(address: &str) -> bool {
-    match address.rsplit_once('@') {
-        Some((local, domain)) => {
-            !local.is_empty()
-                && !domain.is_empty()
-                && address.len() <= 254
-                && !domain.contains('@')
-                && !address.chars().any(|c| c.is_whitespace() || c.is_control())
-        }
-        None => false,
-    }
 }
 
 /// Why `host` can't be a server name, or nothing.
@@ -144,40 +136,97 @@ fn auth_name(auth: AuthMethod) -> &'static str {
     }
 }
 
-/// Checks an account the assistant is about to write; the message never quotes a value.
-pub fn check(account: &AccountSettings) -> Result<(), String> {
-    if !is_valid_key(&account.key.0) {
-        return Err("the key takes a–z, 0–9, - and _ only, at most 40 characters".to_owned());
+/// Why an account can't be written. Its message never quotes a value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountFault {
+    Key,
+    Name,
+    Label,
+    Address,
+    /// The account's or an identity's address can't be sent from: Sealwax sends without
+    /// SMTPUTF8 (ADR-007).
+    NotSendable,
+    Username,
+    /// The incoming or the SMTP server's host, and why.
+    Host(Protocol, &'static str),
+    Port(Protocol),
+    /// The POP3 policy, and why.
+    Pop3(&'static str),
+    /// The file written didn't read back as the accounts it should hold.
+    NotReadBack,
+    /// An HTML signature's path isn't one `signature_html` takes.
+    SignaturePath,
+}
+
+impl fmt::Display for AccountFault {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Key => f.write_str("the key takes a–z, 0–9, - and _ only, at most 40 characters"),
+            Self::Name => f.write_str("the name is empty or has control characters"),
+            Self::Label => f.write_str("the label is empty or has control characters"),
+            Self::Address => f.write_str("the address is not an email address"),
+            Self::NotSendable => f.write_str(
+                "Sealwax can't send from this address yet: before the @ it may hold only English \
+                 letters, digits and symbols such as . _ + -",
+            ),
+            Self::Username => f.write_str("the username is empty or has control characters"),
+            Self::Host(protocol, fault) => write!(f, "{}: {fault}", protocol_name(*protocol)),
+            Self::Port(protocol) => write!(f, "{}: port 0 is not a port", protocol_name(*protocol)),
+            Self::Pop3(fault) => write!(f, "pop3: {fault}"),
+            Self::NotReadBack => f.write_str("the entry did not read back as written"),
+            Self::SignaturePath => {
+                f.write_str("the signature's file isn't an .html file in the signatures folder")
+            }
+        }
+    }
+}
+
+impl std::error::Error for AccountFault {}
+
+/// Checks an account the assistant is about to write.
+pub fn check(account: &AccountSettings) -> Result<(), AccountFault> {
+    if !is_valid_key(account.key.as_str()) {
+        return Err(AccountFault::Key);
     }
     if !is_plain_text(&account.name) {
-        return Err("the name is empty or has control characters".to_owned());
+        return Err(AccountFault::Name);
     }
     if account
         .label
         .as_deref()
         .is_some_and(|label| !is_plain_text(label))
     {
-        return Err("the label is empty or has control characters".to_owned());
+        return Err(AccountFault::Label);
     }
-    if !is_valid_address(&account.address) {
-        return Err("the address is not an email address".to_owned());
+    if !looks_like_address(&account.address) {
+        return Err(AccountFault::Address);
+    }
+    if !is_sendable(&account.address)
+        || account
+            .identities
+            .iter()
+            .any(|identity| !is_sendable(&identity.address))
+    {
+        return Err(AccountFault::NotSendable);
     }
     if !is_plain_text(&account.username) {
-        return Err("the username is empty or has control characters".to_owned());
+        return Err(AccountFault::Username);
     }
     for (protocol, endpoint) in [
         (account.receive.protocol(), &account.incoming),
         (Protocol::Smtp, &account.smtp),
     ] {
         if let Some(fault) = host_fault(&endpoint.host) {
-            return Err(format!("{}: {fault}", protocol_name(protocol)));
+            return Err(AccountFault::Host(protocol, fault));
         }
         if endpoint.port == 0 {
-            return Err(format!("{}: port 0 is not a port", protocol_name(protocol)));
+            return Err(AccountFault::Port(protocol));
         }
     }
-    if let Receive::Pop3(policy) = account.receive {
-        policy_fault(policy).map_or(Ok(()), |fault| Err(format!("pop3: {fault}")))?;
+    if let Receive::Pop3(policy) = account.receive
+        && let Some(fault) = policy_fault(policy)
+    {
+        return Err(AccountFault::Pop3(fault));
     }
     Ok(())
 }
@@ -234,7 +283,7 @@ struct ReadIdentity {
     address: String,
     address_span: Range<usize>,
     signature: Option<String>,
-    signature_html: Option<HtmlSignature>,
+    signature_html: Option<String>,
 }
 
 /// Collects the mistakes of one `accounts.toml` read.
@@ -280,6 +329,31 @@ impl Reader<'_> {
                 None
             }
         }
+    }
+
+    /// An HTML signature's file (issue #6): a relative path under the signatures folder, of at
+    /// most 255 characters, without `..`, ending in `.html` or `.htm`.
+    fn signature_html(&mut self, value: &Spanned<DeValue<'_>>) -> Option<String> {
+        let Some(path) = value.get_ref().as_str() else {
+            self.error(
+                value.span(),
+                format!(
+                    "signature_html takes a file name in quotes, not {}",
+                    article(value.get_ref().type_str())
+                ),
+            );
+            return None;
+        };
+        let path = path.trim();
+        if !is_signature_path(path) {
+            self.error(
+                value.span(),
+                "signature_html takes an .html file in the signatures folder, such as \
+                 \"work/signature.html\"",
+            );
+            return None;
+        }
+        Some(path.to_owned())
     }
 
     /// A signature: plain text, line breaks and tabs allowed, at most [`MAX_SIGNATURE_CHARS`];
@@ -339,31 +413,6 @@ impl Reader<'_> {
             .collect()
     }
 
-    /// An HTML signature's file (issue #6): a path, relative to Sealwax's config folder or
-    /// absolute, without control characters; the app reads it.
-    fn signature_html(&mut self, value: &Spanned<DeValue<'_>>) -> Option<HtmlSignature> {
-        let Some(text) = value.get_ref().as_str() else {
-            self.error(
-                value.span(),
-                format!(
-                    "signature_html takes the HTML file's path in quotes, like \
-                     \"signatures/work/signature.html\", not {}",
-                    article(value.get_ref().type_str())
-                ),
-            );
-            return None;
-        };
-        if text.trim().is_empty() || text.chars().any(char::is_control) {
-            self.error(
-                value.span(),
-                "signature_html is the HTML file's path, like \"signatures/work/signature.html\" \
-                 (in Sealwax's config folder); leave the line out for none",
-            );
-            return None;
-        }
-        Some(HtmlSignature::unread(text.trim()))
-    }
-
     fn identity(&mut self, table: &DeTable<'_>, header: Range<usize>) -> Option<ReadIdentity> {
         let errors_before = self.errors.len();
         let mut name = None;
@@ -389,7 +438,7 @@ impl Reader<'_> {
                 }
                 "address" => {
                     if let Some(text) = self.string("address", value) {
-                        if is_valid_address(&text) {
+                        if looks_like_address(&text) {
                             address = Some((text, span));
                         } else {
                             self.error(
@@ -459,8 +508,8 @@ impl Reader<'_> {
             match field_name {
                 "key" => {
                     if let Some(text) = self.string("key", value) {
-                        if is_valid_key(&text) {
-                            key = Some((AccountKey(text), span));
+                        if let Ok(parsed) = AccountKey::parse(&text) {
+                            key = Some((parsed, span));
                         } else {
                             self.error(
                                 span,
@@ -502,7 +551,7 @@ impl Reader<'_> {
                 }
                 "address" => {
                     if let Some(text) = self.string("address", value) {
-                        if is_valid_address(&text) {
+                        if looks_like_address(&text) {
                             address = Some((text, span));
                         } else {
                             self.error(span, "address is an email address, like ada@example.test");
@@ -877,7 +926,7 @@ impl Reader<'_> {
                 let elsewhere = earlier.iter().find_map(|account| {
                     account
                         .addresses()
-                        .position(|(known, _)| known.eq_ignore_ascii_case(address))
+                        .position(|(known, _)| same(known, address))
                         .map(|position| (account.line, position == 0))
                 });
                 if let Some((line, its_own)) = elsewhere {
@@ -890,7 +939,7 @@ impl Reader<'_> {
                         span.clone(),
                         format!("this address is also {what} of the account on line {line}"),
                     );
-                } else if own.iter().any(|known| known.eq_ignore_ascii_case(address)) {
+                } else if own.iter().any(|known| same(known, address)) {
                     self.error(
                         span.clone(),
                         "this address is already one of this account's; every identity needs \
@@ -999,11 +1048,31 @@ pub fn parse(text: &str) -> Result<Vec<AccountSettings>, Vec<FileError>> {
 pub enum EditError {
     /// The file has mistakes; it is fixed by hand first, since a file with mistakes isn't applied.
     Invalid(Vec<FileError>),
-    /// The account to add is incomplete (the reason never quotes a value).
-    Account(String),
+    /// The account to add is incomplete.
+    Account(AccountFault),
     KeyExists,
     AddressExists,
 }
+
+impl fmt::Display for EditError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Invalid(errors) => write!(
+                f,
+                "accounts.toml has {} mistake(s); the first: {}",
+                errors.len(),
+                errors.first().map(ToString::to_string).unwrap_or_default()
+            ),
+            Self::Account(fault) => write!(f, "the account can't be written: {fault}"),
+            Self::KeyExists => f.write_str("accounts.toml already has an account with this key"),
+            Self::AddressExists => {
+                f.write_str("accounts.toml already has an account with this address")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EditError {}
 
 /// The `[[account]]` entry the assistant writes, with every field spelled out.
 pub fn entry(account: &AccountSettings) -> String {
@@ -1025,7 +1094,7 @@ pub fn entry(account: &AccountSettings) -> String {
         }
     }
     let mut table = Table::new();
-    table["key"] = value(&account.key.0);
+    table["key"] = value(account.key.as_str());
     table["name"] = value(&account.name);
     table["address"] = value(&account.address);
     if let Some(label) = &account.label {
@@ -1055,7 +1124,7 @@ pub fn add(text: &str, account: &AccountSettings) -> Result<String, EditError> {
     }
     if before
         .iter()
-        .any(|known| known.address.eq_ignore_ascii_case(&account.address))
+        .any(|known| same(&known.address, &account.address))
     {
         return Err(EditError::AddressExists);
     }
@@ -1072,9 +1141,7 @@ pub fn add(text: &str, account: &AccountSettings) -> Result<String, EditError> {
     let after = parse(&output).map_err(EditError::Invalid)?;
     let expected: Vec<_> = before.into_iter().chain([account.clone()]).collect();
     if after != expected {
-        return Err(EditError::Account(
-            "the new entry did not read back as written".to_owned(),
-        ));
+        return Err(EditError::Account(AccountFault::NotReadBack));
     }
     Ok(output)
 }
@@ -1122,7 +1189,7 @@ pub fn remove(text: &str, key: &AccountKey) -> Result<Option<String>, EditError>
     // The key as `parse` reads it: white space around it is no part of it (found by fuzzing,
     // ML-093: such an entry stayed while the account's data went).
     let Some(index) = tables.iter().position(|table| {
-        table.get("key").and_then(Item::as_str).map(str::trim) == Some(key.0.as_str())
+        table.get("key").and_then(Item::as_str).map(str::trim) == Some(key.as_str())
     }) else {
         return Ok(None);
     };
@@ -1182,9 +1249,7 @@ pub fn relabel(
     color: Option<AccountColor>,
 ) -> Result<Option<String>, EditError> {
     if label.is_some_and(|label| !is_plain_text(label)) {
-        return Err(EditError::Account(
-            "the label is empty or has control characters".to_owned(),
-        ));
+        return Err(EditError::Account(AccountFault::Label));
     }
     let before = parse(text).map_err(EditError::Invalid)?;
     if !before.iter().any(|account| &account.key == key) {
@@ -1198,7 +1263,7 @@ pub fn relabel(
         .and_then(Item::as_array_of_tables_mut)
         .and_then(|tables| {
             tables.iter_mut().find(|table| {
-                table.get("key").and_then(Item::as_str).map(str::trim) == Some(key.0.as_str())
+                table.get("key").and_then(Item::as_str).map(str::trim) == Some(key.as_str())
             })
         })
     else {
@@ -1223,9 +1288,91 @@ pub fn relabel(
         })
         .collect();
     if parse(&output).map_err(EditError::Invalid)? != expected {
-        return Err(EditError::Account(
-            "the entry did not read back as written".to_owned(),
-        ));
+        return Err(EditError::Account(AccountFault::NotReadBack));
+    }
+    Ok(Some(output))
+}
+
+/// `text` with the HTML signature of `address`, the account `key`'s own address or one of its
+/// identities', set to `path` (`None` takes the line out); `None` when the file has no such
+/// account or address. A value already written is replaced in place, its comment kept; a new
+/// one goes after the address's `signature`, else after its address. Everything else stays byte
+/// for byte. A file with mistakes, or one that doesn't read back, is refused.
+pub fn set_signature_html(
+    text: &str,
+    key: &AccountKey,
+    address: &str,
+    path: Option<&str>,
+) -> Result<Option<String>, EditError> {
+    if path.is_some_and(|path| !is_signature_path(path)) {
+        return Err(EditError::Account(AccountFault::SignaturePath));
+    }
+    let before = parse(text).map_err(EditError::Invalid)?;
+    let Some(account) = before.iter().find(|account| &account.key == key) else {
+        return Ok(None);
+    };
+    let own = crate::address::same(&account.address, address);
+    let identity = account
+        .identities
+        .iter()
+        .position(|identity| crate::address::same(&identity.address, address));
+    if !own && identity.is_none() {
+        return Ok(None);
+    }
+    let mut document: DocumentMut = text
+        .parse()
+        .map_err(|_| EditError::Invalid(parse_toml(text).err().into_iter().collect()))?;
+    let Some(table) = document
+        .get_mut("account")
+        .and_then(Item::as_array_of_tables_mut)
+        .and_then(|tables| {
+            tables.iter_mut().find(|table| {
+                table.get("key").and_then(Item::as_str).map(str::trim) == Some(key.as_str())
+            })
+        })
+    else {
+        return Ok(None);
+    };
+    let target = if own {
+        Some(table)
+    } else {
+        table
+            .get_mut("identity")
+            .and_then(Item::as_array_of_tables_mut)
+            .and_then(|identities| {
+                identities.iter_mut().find(|identity| {
+                    identity
+                        .get("address")
+                        .and_then(Item::as_str)
+                        .is_some_and(|known| crate::address::same(known.trim(), address))
+                })
+            })
+    };
+    let Some(target) = target else {
+        return Ok(None);
+    };
+    let after = if target.contains_key("signature") {
+        "signature"
+    } else {
+        "address"
+    };
+    set_value(target, "signature_html", path, after);
+    let output = document.to_string();
+    let expected: Vec<AccountSettings> = before
+        .into_iter()
+        .map(|mut account| {
+            if &account.key == key {
+                let path = path.map(str::to_owned);
+                match identity.filter(|_| !own) {
+                    Some(index) => account.identities[index].signature_html = path,
+                    None => account.signature_html = path,
+                }
+            }
+            account
+        })
+        .collect();
+    if parse(&output).map_err(EditError::Invalid)? != expected {
+        return Err(EditError::Account(AccountFault::NotReadBack));
     }
     Ok(Some(output))
 }
@@ -1279,10 +1426,6 @@ pub fn default_accounts_file() -> String {
      # signature = \"\"\"\n\
      # Ada Lovelace\n\
      # Analytical Engines Ltd.\"\"\"       # optional: plain text under your mail, after \"-- \"\n\
-     # signature_html = \"signatures/work/signature.html\"  # optional: an HTML signature\n\
-     #                                # in place of it, in this folder; its images (PNG,\n\
-     #                                # JPEG, GIF, WebP) lie beside it and go with the mail.\n\
-     #                                # The plain signature stands in when it can't be read\n\
      #\n\
      # [account.imap]\n\
      # host = \"imap.example.test\"\n\
@@ -1309,8 +1452,7 @@ pub fn default_accounts_file() -> String {
      #                                # a reply goes out from the address it was sent to\n\
      # name = \"Ada at the board\"      # optional: the account's name by default\n\
      # address = \"board@example.test\"\n\
-     # signature = \"Ada, for the board\"  # optional\n\
-     # signature_html = \"signatures/board/signature.html\"  # optional\n"
+     # signature = \"Ada, for the board\"  # optional\n"
         .to_owned()
 }
 
@@ -1320,7 +1462,7 @@ mod tests {
 
     fn account(key: &str, address: &str) -> AccountSettings {
         AccountSettings {
-            key: AccountKey(key.to_owned()),
+            key: AccountKey::parse(key).unwrap(),
             name: "Ada Lovelace".to_owned(),
             label: None,
             color: None,
@@ -1432,7 +1574,7 @@ mod tests {
                     [account.imap]\nhost = \"127.0.0.1\"\nport = 1993\nsecurity = \"starttls\"\n\
                     [account.smtp]\nhost = \"::1\"\nport = 0x24b\nsecurity = \"tls\"\n";
         let account = &parse(text).unwrap()[0];
-        assert_eq!(account.key.0, "k3j5x8m2q9wa");
+        assert_eq!(account.key.as_str(), "k3j5x8m2q9wa");
         assert_eq!(account.name, "Ada");
         assert_eq!(account.username, "ada");
         assert_eq!(account.auth, AuthMethod::OAuth(OAuthProvider::Microsoft));
@@ -1515,18 +1657,13 @@ mod tests {
             "{written}"
         );
         new.label = Some("Work\n".to_owned());
-        assert_eq!(
-            add("", &new),
-            Err(EditError::Account(
-                "the label is empty or has control characters".to_owned()
-            ))
-        );
+        assert_eq!(add("", &new), Err(EditError::Account(AccountFault::Label)));
     }
 
     #[test]
     fn relabel_sets_the_label_and_the_color_after_the_address() {
         let text = format!("# my accounts\n\n{ONE}");
-        let work = AccountKey("work".to_owned());
+        let work = AccountKey::parse("work").unwrap();
         let named = relabel(&text, &work, Some("Work"), Some(AccountColor::Sage))
             .unwrap()
             .unwrap();
@@ -1554,6 +1691,66 @@ mod tests {
     }
 
     #[test]
+    fn the_html_signature_is_set_for_the_account_or_an_identity() {
+        let text = "[[account]]\nkey = \"work\"\nname = \"Ada\"\naddress = \"ada@example.test\"\n\
+                    signature = \"Ada\"  # mine\n\n[account.imap]\nhost = \"imap.example.test\"\n\n\
+                    [account.smtp]\nhost = \"smtp.example.test\"\n\n[[account.identity]]\n\
+                    address = \"board@example.test\"\n";
+        let work = AccountKey::parse("work").unwrap();
+        let own = set_signature_html(text, &work, "ADA@example.test", Some("work/ada.html"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            own,
+            text.replace(
+                "signature = \"Ada\"  # mine\n",
+                "signature = \"Ada\"  # mine\nsignature_html = \"work/ada.html\"\n"
+            )
+        );
+        let both = set_signature_html(&own, &work, "board@example.test", Some("work/board.html"))
+            .unwrap()
+            .unwrap();
+        let account = &parse(&both).unwrap()[0];
+        assert_eq!(account.signature_html.as_deref(), Some("work/ada.html"));
+        assert_eq!(
+            account.identities[0].signature_html.as_deref(),
+            Some("work/board.html")
+        );
+        assert!(
+            both.ends_with(
+                "address = \"board@example.test\"\nsignature_html = \"work/board.html\"\n"
+            )
+        );
+        // Taken out again: the file as it was.
+        let back = set_signature_html(&both, &work, "board@example.test", None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            set_signature_html(&back, &work, "ada@example.test", None)
+                .unwrap()
+                .unwrap(),
+            text
+        );
+        assert_eq!(
+            set_signature_html(text, &work, "other@example.test", None),
+            Ok(None)
+        );
+        assert_eq!(
+            set_signature_html(
+                text,
+                &AccountKey::parse("gone").unwrap(),
+                "ada@example.test",
+                None
+            ),
+            Ok(None)
+        );
+        assert_eq!(
+            set_signature_html(text, &work, "ada@example.test", Some("../x.html")),
+            Err(EditError::Account(AccountFault::SignaturePath))
+        );
+    }
+
+    #[test]
     fn relabel_keeps_comments_and_the_other_accounts() {
         let text = "[[account]]\nkey = \"work\"\nname = \"Ada\"\nlabel = \"Old\"   # mine\n\
                     address = \"ada@example.test\"\n\n[account.imap]\nhost = \"imap.example.test\"\n\n\
@@ -1561,8 +1758,8 @@ mod tests {
                     key = \"club\"\nname = \"Ada\"\naddress = \"club@example.test\"\n\n\
                     [account.imap]\nhost = \"imap.example.test\"\n\n[account.smtp]\n\
                     host = \"smtp.example.test\"\n";
-        let club = AccountKey("club".to_owned());
-        let changed = relabel(text, &AccountKey("work".to_owned()), Some("New"), None)
+        let club = AccountKey::parse("club").unwrap();
+        let changed = relabel(text, &AccountKey::parse("work").unwrap(), Some("New"), None)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -1584,17 +1781,15 @@ mod tests {
 
     #[test]
     fn relabel_refuses_what_it_cant_write() {
-        let work = AccountKey("work".to_owned());
+        let work = AccountKey::parse("work").unwrap();
         assert_eq!(
-            relabel(ONE, &AccountKey("nobody".to_owned()), Some("X"), None),
+            relabel(ONE, &AccountKey::parse("nobody").unwrap(), Some("X"), None),
             Ok(None)
         );
         assert_eq!(relabel("", &work, Some("X"), None), Ok(None));
         assert_eq!(
             relabel(ONE, &work, Some(" "), None),
-            Err(EditError::Account(
-                "the label is empty or has control characters".to_owned()
-            ))
+            Err(EditError::Account(AccountFault::Label))
         );
         assert!(matches!(
             relabel(&format!("{ONE}oops = 1\n"), &work, Some("X"), None),
@@ -1630,7 +1825,7 @@ mod tests {
         );
         let accounts = parse(&example).unwrap();
         assert_eq!(accounts.len(), 1);
-        assert_eq!(accounts[0].key.0, "work");
+        assert_eq!(accounts[0].key.as_str(), "work");
         assert_eq!(accounts[0].title(), "Work");
         assert_eq!(accounts[0].color, Some(AccountColor::Sage));
         assert_eq!(accounts[0].receive, Receive::Imap);
@@ -1641,16 +1836,12 @@ mod tests {
             Some("Ada Lovelace\nAnalytical Engines Ltd.")
         );
         assert_eq!(
-            accounts[0].signature_html,
-            Some(HtmlSignature::unread("signatures/work/signature.html"))
-        );
-        assert_eq!(
             accounts[0].identities,
             [Identity {
                 name: "Ada at the board".to_owned(),
                 address: "board@example.test".to_owned(),
                 signature: Some("Ada, for the board".to_owned()),
-                signature_html: Some(HtmlSignature::unread("signatures/board/signature.html")),
+                signature_html: None,
             }]
         );
     }
@@ -1911,9 +2102,13 @@ mod tests {
                 .collect::<Vec<_>>(),
             [Protocol::Imap, Protocol::Pop3]
         );
-        let back = remove(&both, &AccountKey("home".into())).unwrap().unwrap();
+        let back = remove(&both, &AccountKey::parse("home").unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(back, work);
-        let only_home = remove(&both, &AccountKey("work".into())).unwrap().unwrap();
+        let only_home = remove(&both, &AccountKey::parse("work").unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(parse(&only_home).unwrap(), [home]);
     }
 
@@ -1943,7 +2138,10 @@ mod tests {
         bad_host.incoming.host = "pop.example.test:995".to_owned();
         assert_eq!(
             check(&bad_host),
-            Err("pop3: the port goes in port = …, not in host".to_owned())
+            Err(AccountFault::Host(
+                Protocol::Pop3,
+                "the port goes in port = …, not in host"
+            ))
         );
     }
 
@@ -1976,51 +2174,6 @@ mod tests {
         );
         let blank = ONE.replace("name = ", "signature = \" \\n \"\nname = ");
         assert_eq!(parse(&blank).unwrap()[0].signature, None);
-    }
-
-    #[test]
-    fn reads_html_signatures() {
-        let text = ONE.replace(
-            "address = \"ada@example.test\"\n",
-            "address = \"ada@example.test\"\nsignature_html = \" signatures/work/sig.html \"\n",
-        ) + "\n[[account.identity]]\naddress = \"board@example.test\"\n\
-               signature_html = \"/home/ada/board.html\"\n";
-        let account = &parse(&text).unwrap()[0];
-        assert_eq!(
-            account.signature_html,
-            Some(HtmlSignature::unread("signatures/work/sig.html"))
-        );
-        assert_eq!(
-            account.identities[0].signature_html,
-            Some(HtmlSignature::unread("/home/ada/board.html"))
-        );
-        let senders = crate::compose::identity::senders(account);
-        assert_eq!(senders[0].signature_html, account.signature_html);
-        for (value, expected) in [
-            (
-                "3",
-                "line 3, column 18: signature_html takes the HTML file's path in quotes",
-            ),
-            (
-                "\" \"",
-                "line 3, column 18: signature_html is the HTML file's path",
-            ),
-            (
-                "\"a\\u0007b\"",
-                "line 3, column 18: signature_html is the HTML file's path",
-            ),
-        ] {
-            let bad = ONE.replace("name = ", &format!("signature_html = {value}\nname = "));
-            let found = errors(&bad);
-            assert!(
-                found
-                    .first()
-                    .is_some_and(|error| error.starts_with(expected)),
-                "{expected:?} not in {found:?}"
-            );
-        }
-        let typo = ONE.replace("name = ", "signature_htm = \"a.html\"\nname = ");
-        assert!(errors(&typo)[0].contains("did you mean signature_html?"));
     }
 
     #[test]
@@ -2107,9 +2260,11 @@ mod tests {
         let accounts = parse(&text).unwrap();
         assert_eq!(accounts[0].identities.len(), 1);
         assert!(accounts[1].identities.is_empty());
-        let without = remove(&text, &AccountKey("work".into())).unwrap().unwrap();
+        let without = remove(&text, &AccountKey::parse("work").unwrap())
+            .unwrap()
+            .unwrap();
         assert!(!without.contains("alias@"), "{without}");
-        assert_eq!(parse(&without).unwrap()[0].key.0, "home");
+        assert_eq!(parse(&without).unwrap()[0].key.as_str(), "home");
         let added = add(&text, &account("third", "third@example.test")).unwrap();
         assert_eq!(parse(&added).unwrap()[0].identities.len(), 1);
         assert!(!entry(&account("third", "third@example.test")).contains("signature"));
@@ -2291,6 +2446,30 @@ mod tests {
         assert!(added.starts_with("# no newline at the end\n\n[[account]]"));
     }
 
+    /// An address Sealwax can't send from is refused when the assistant writes an account, and
+    /// read when the file holds one: the account still gets its mail.
+    #[test]
+    fn writes_refuse_an_address_that_cant_be_sent_from_and_reads_keep_it() {
+        let jorg = account("jorg", "jörg@example.test");
+        assert_eq!(check(&jorg), Err(AccountFault::NotSendable));
+        assert_eq!(
+            add("", &jorg),
+            Err(EditError::Account(AccountFault::NotSendable))
+        );
+        let mut alias = account("work", "ada@example.test");
+        alias.identities.push(Identity {
+            name: "Åse".to_owned(),
+            address: "åse@example.test".to_owned(),
+            signature: None,
+            signature_html: None,
+        });
+        assert_eq!(check(&alias), Err(AccountFault::NotSendable));
+        let written = entry(&account("jorg", "jorg@example.test"))
+            .replace("jorg@example.test", "jörg@example.test");
+        let read = parse(&written).expect("the file reads");
+        assert_eq!(read[0].address, "jörg@example.test");
+    }
+
     #[test]
     fn adding_refuses_duplicates_and_faulty_files() {
         let text = add("", &account("work", "ada@example.test")).unwrap();
@@ -2309,7 +2488,8 @@ mod tests {
         let mut bad = account("a", "a@example.test");
         bad.incoming.host = "imap.example.test:993".to_owned();
         assert!(matches!(add("", &bad), Err(EditError::Account(_))));
-        bad = account("Not A Key", "a@example.test");
+        bad = account("a", "a@example.test");
+        bad.key = AccountKey::unassigned();
         assert!(matches!(add("", &bad), Err(EditError::Account(_))));
     }
 
@@ -2326,19 +2506,23 @@ mod tests {
         let text = format!("{header}{work}{home}{tail}");
         assert_eq!(parse(&text).unwrap().len(), 2);
 
-        let without_work = remove(&text, &AccountKey("work".into())).unwrap().unwrap();
+        let without_work = remove(&text, &AccountKey::parse("work").unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(without_work, format!("{header}{home}{tail}"));
-        let without_home = remove(&text, &AccountKey("home".into())).unwrap().unwrap();
+        let without_home = remove(&text, &AccountKey::parse("home").unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(without_home, format!("{header}{work}{tail}"));
-        let neither = remove(&without_home, &AccountKey("work".into()))
+        let neither = remove(&without_home, &AccountKey::parse("work").unwrap())
             .unwrap()
             .unwrap();
         assert_eq!(neither, format!("{header}{tail}"));
         assert_eq!(parse(&neither), Ok(Vec::new()));
-        assert_eq!(remove(&text, &AccountKey("gone".into())), Ok(None));
-        assert_eq!(remove("", &AccountKey("gone".into())), Ok(None));
+        assert_eq!(remove(&text, &AccountKey::parse("gone").unwrap()), Ok(None));
+        assert_eq!(remove("", &AccountKey::parse("gone").unwrap()), Ok(None));
         assert!(matches!(
-            remove("[[account]\n", &AccountKey("x".into())),
+            remove("[[account]\n", &AccountKey::parse("x").unwrap()),
             Err(EditError::Invalid(_))
         ));
     }
@@ -2348,13 +2532,19 @@ mod tests {
         let header = default_accounts_file();
         let one = add(&header, &account("work", "ada@example.test")).unwrap();
         let two = add(&one, &account("home", "ada@home.example.test")).unwrap();
-        let back = remove(&two, &AccountKey("home".into())).unwrap().unwrap();
+        let back = remove(&two, &AccountKey::parse("home").unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(back, one);
-        let back = remove(&back, &AccountKey("work".into())).unwrap().unwrap();
+        let back = remove(&back, &AccountKey::parse("work").unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(back, header);
-        let only_home = remove(&two, &AccountKey("work".into())).unwrap().unwrap();
+        let only_home = remove(&two, &AccountKey::parse("work").unwrap())
+            .unwrap()
+            .unwrap();
         assert!(only_home.starts_with(&header));
-        assert_eq!(parse(&only_home).unwrap()[0].key.0, "home");
+        assert_eq!(parse(&only_home).unwrap()[0].key.as_str(), "home");
     }
 
     /// Found by fuzzing (ML-093): `parse` reads a key without the white space around it, and
@@ -2363,19 +2553,15 @@ mod tests {
     fn a_key_written_with_spaces_is_removed_by_its_key() {
         let text = "[[account]]\nkey = \" work \"\nname = \"W\"\naddress = \"w@example.test\"\n\
                     [account.imap]\nhost = \"i.example.test\"\n[account.smtp]\nhost = \"s.example.test\"\n";
-        assert_eq!(parse(text).unwrap()[0].key.0, "work");
-        let removed = remove(text, &AccountKey("work".into())).unwrap().unwrap();
+        assert_eq!(parse(text).unwrap()[0].key.as_str(), "work");
+        let removed = remove(text, &AccountKey::parse("work").unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(parse(&removed), Ok(Vec::new()));
     }
 
     #[test]
     fn keys_and_hosts() {
-        for key in ["work", "k3j5x8m2q9wa", "a-b_c", "0"] {
-            assert!(is_valid_key(key), "{key}");
-        }
-        for key in ["", "Work", "a b", "æ", &"x".repeat(41)] {
-            assert!(!is_valid_key(key), "{key}");
-        }
         for host in [
             "imap.example.test",
             "127.0.0.1",

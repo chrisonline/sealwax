@@ -1,0 +1,650 @@
+//! The window's layout between runs (the user's UI tweaks, 2026-10-08): the widths the user
+//! dragged the sidebar and the message list to, whether the sidebar is hidden (Toggle Sidebar,
+//! the owner's word on 2026-10-21) and whether the reading pane is (Toggle Reading Pane, issue
+//! #34), the accounts folded in the sidebar, the
+//! accounts whose "More folders" are open, the folders whose subfolders it folds away (M9,
+//! folders; the sidebar comes back as the user left it, their word on 2026-10-09), and the view
+//! the window last showed, which a new window opens on (issue #5, 2026-10-11), and the saved
+//! searches the sidebar lists (1.5.0), in `$XDG_STATE_HOME/sealwax/layout.toml`. Sealwax writes it; it isn't a setting, so it is read
+//! leniently: anything it doesn't know, or a width out of range, is left out and the default
+//! applies.
+
+use sealwax_domain::account::AccountKey;
+use sealwax_domain::senders::GroupBy;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::RangeInclusive;
+use toml::Value;
+
+pub const LAYOUT_FILE: &str = "layout.toml";
+/// The widths the sidebar and the message list can be dragged to, in px.
+pub const SIDEBAR_WIDTHS: RangeInclusive<u32> = 160..=360;
+pub const LIST_WIDTHS: RangeInclusive<u32> = 280..=640;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Layout {
+    /// The full sidebar's width; `None` for the default.
+    pub sidebar_width: Option<u32>,
+    /// The message list's width beside the reader; `None` for the default.
+    pub list_width: Option<u32>,
+    /// Toggle Sidebar hid the sidebar.
+    pub sidebar_hidden: bool,
+    /// Toggle Reading Pane hid the reader: the list and a message take turns.
+    pub reader_hidden: bool,
+    /// The accounts whose folders the sidebar folds away, by key.
+    pub collapsed: Vec<AccountKey>,
+    /// The accounts whose "More folders" are open, by key.
+    pub more_open: Vec<AccountKey>,
+    /// The folders whose subfolders the sidebar folds away: each account's by key, by the
+    /// folder's whole name.
+    pub folded: BTreeMap<AccountKey, BTreeSet<String>>,
+    /// The view the window last showed; `None`: the first account's Inbox.
+    pub view: Option<View>,
+    /// What the message list groups by (issue #24, ADR-023).
+    pub group_by: GroupBy,
+    /// The saved searches, in the sidebar's order (1.5.0).
+    pub searches: Vec<SavedSearch>,
+}
+
+/// A search kept under a name: its query, and where it runs, All Inboxes for every folder.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavedSearch {
+    pub name: String,
+    pub query: String,
+    pub view: View,
+}
+
+/// The longest name or query a saved search keeps, in characters.
+pub const SEARCH_TEXT_MAX: usize = 200;
+/// The most saved searches the file keeps.
+pub const SEARCHES_MAX: usize = 50;
+
+/// A view a new window can open on: All Inboxes, or an account's folder by its whole name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum View {
+    AllInboxes,
+    Folder { account: AccountKey, name: String },
+}
+
+const ALL_INBOXES: &str = "all-inboxes";
+
+impl Layout {
+    pub fn parse(text: &str) -> Self {
+        let Ok(table) = text.parse::<toml::Table>() else {
+            return Self::default();
+        };
+        let width = |name: &str, range: &RangeInclusive<u32>| {
+            table
+                .get(name)
+                .and_then(Value::as_integer)
+                .and_then(|width| u32::try_from(width).ok())
+                .filter(|width| range.contains(width))
+        };
+        let keys = |name: &str| {
+            let mut keys: Vec<AccountKey> = Vec::new();
+            for key in table
+                .get(name)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .filter_map(|key| AccountKey::parse(key).ok())
+            {
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+            }
+            keys
+        };
+        let mut folded: BTreeMap<AccountKey, BTreeSet<String>> = BTreeMap::new();
+        for (key, names) in table
+            .get("folded")
+            .and_then(Value::as_table)
+            .into_iter()
+            .flatten()
+            .filter_map(|(key, names)| Some((AccountKey::parse(key).ok()?, names)))
+        {
+            let names: BTreeSet<String> = names
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .collect();
+            if !names.is_empty() {
+                folded.insert(key, names);
+            }
+        }
+        let view = read_view(table.get("view"));
+        let searches = table
+            .get("search")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_table)
+            .filter_map(|search| {
+                let text = |name: &str| {
+                    search
+                        .get(name)
+                        .and_then(Value::as_str)
+                        .map(|text| {
+                            text.trim()
+                                .chars()
+                                .take(SEARCH_TEXT_MAX)
+                                .collect::<String>()
+                        })
+                        .filter(|text| !text.is_empty())
+                };
+                Some(SavedSearch {
+                    name: text("name")?,
+                    query: text("query")?,
+                    view: read_view(search.get("view"))?,
+                })
+            })
+            .take(SEARCHES_MAX)
+            .collect();
+        Self {
+            sidebar_width: width("sidebar_width", &SIDEBAR_WIDTHS),
+            list_width: width("list_width", &LIST_WIDTHS),
+            sidebar_hidden: table.get("sidebar_hidden").and_then(Value::as_bool) == Some(true),
+            reader_hidden: table.get("reader_hidden").and_then(Value::as_bool) == Some(true),
+            collapsed: keys("collapsed"),
+            more_open: keys("more_open"),
+            folded,
+            view,
+            group_by: table
+                .get("group_by")
+                .and_then(Value::as_str)
+                .and_then(GroupBy::from_name)
+                .unwrap_or_default(),
+            searches,
+        }
+    }
+
+    pub fn to_text(&self) -> String {
+        let mut text = String::from(
+            "# Sealwax keeps the window's layout here: the widths the sidebar and the message\n\
+             # list were dragged to, whether the sidebar or the reading pane is hidden, the accounts\n\
+             # and folders folded or open in the sidebar, and the view the window last showed.\n\
+             # It isn't a setting; delete the file to go back to the defaults.\n",
+        );
+        if let Some(width) = self.sidebar_width {
+            text.push_str(&format!("sidebar_width = {width}\n"));
+        }
+        if let Some(width) = self.list_width {
+            text.push_str(&format!("list_width = {width}\n"));
+        }
+        if self.sidebar_hidden {
+            text.push_str("sidebar_hidden = true\n");
+        }
+        if self.reader_hidden {
+            text.push_str("reader_hidden = true\n");
+        }
+        if self.group_by != GroupBy::None {
+            text.push_str(&format!("group_by = \"{}\"\n", self.group_by.name()));
+        }
+        let keys: Vec<String> = self
+            .collapsed
+            .iter()
+            .map(|key| format!("\"{}\"", key.as_str()))
+            .collect();
+        text.push_str(&format!("collapsed = [{}]\n", keys.join(", ")));
+        if !self.more_open.is_empty() {
+            let keys: Vec<String> = self
+                .more_open
+                .iter()
+                .map(|key| format!("\"{}\"", key.as_str()))
+                .collect();
+            text.push_str(&format!("more_open = [{}]\n", keys.join(", ")));
+        }
+        if let Some(view) = &self.view {
+            text.push_str(&format!("view = {}\n", view_text(view)));
+        }
+        if !self.folded.is_empty() {
+            text.push_str("\n[folded]\n");
+            for (key, names) in &self.folded {
+                let names: Vec<String> = names
+                    .iter()
+                    .map(|name| Value::String(name.clone()).to_string())
+                    .collect();
+                text.push_str(&format!("{} = [{}]\n", key.as_str(), names.join(", ")));
+            }
+        }
+        for search in &self.searches {
+            text.push_str(&format!(
+                "\n[[search]]\nname = {}\nquery = {}\nview = {}\n",
+                Value::String(search.name.clone()),
+                Value::String(search.query.clone()),
+                view_text(&search.view)
+            ));
+        }
+        text
+    }
+
+    /// Keeps `search` at the end, or in place of the one of the same name; false when the
+    /// file holds [`SEARCHES_MAX`] already.
+    pub fn save_search(&mut self, search: SavedSearch) -> bool {
+        if let Some(known) = self
+            .searches
+            .iter_mut()
+            .find(|known| known.name == search.name)
+        {
+            *known = search;
+            return true;
+        }
+        if self.searches.len() >= SEARCHES_MAX {
+            return false;
+        }
+        self.searches.push(search);
+        true
+    }
+
+    /// Whether the folder `name` of `key`'s account has its subfolders folded away.
+    pub fn is_folded(&self, key: &AccountKey, name: &str) -> bool {
+        self.folded
+            .get(key)
+            .is_some_and(|names| names.contains(name))
+    }
+
+    /// Folds the subfolders of `key`'s folder `name` away or opens them again; true when that
+    /// changed anything.
+    pub fn set_folded(&mut self, key: &AccountKey, name: &str, folded: bool) -> bool {
+        if folded {
+            return self
+                .folded
+                .entry(key.clone())
+                .or_default()
+                .insert(name.to_owned());
+        }
+        let Some(names) = self.folded.get_mut(key) else {
+            return false;
+        };
+        let changed = names.remove(name);
+        if names.is_empty() {
+            self.folded.remove(key);
+        }
+        changed
+    }
+
+    /// Opens `key`'s account's "More folders" or closes them; true when that changed anything.
+    pub fn set_more_open(&mut self, key: &AccountKey, open: bool) -> bool {
+        let known = self.more_open.iter().position(|known| known == key);
+        match (known, open) {
+            (None, true) => self.more_open.push(key.clone()),
+            (Some(index), false) => {
+                self.more_open.remove(index);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// `key`'s folder `old` is now `new`: its fold, its subfolders' and the remembered view follow
+    /// it. True when that changed anything.
+    pub fn rename_folded(
+        &mut self,
+        key: &AccountKey,
+        old: &str,
+        new: &str,
+        delimiter: Option<char>,
+    ) -> bool {
+        let mut changed = false;
+        if let Some(View::Folder { account, name }) = &mut self.view
+            && account == key
+            && let Some(to) = sealwax_domain::folders::renamed(name, old, new, delimiter)
+        {
+            *name = to;
+            changed = true;
+        }
+        let Some(names) = self.folded.get_mut(key) else {
+            return changed;
+        };
+        let moved: Vec<(String, String)> = names
+            .iter()
+            .filter_map(|name| {
+                sealwax_domain::folders::renamed(name, old, new, delimiter)
+                    .map(|to| (name.clone(), to))
+            })
+            .collect();
+        for (from, to) in &moved {
+            names.remove(from);
+            names.insert(to.clone());
+        }
+        changed || !moved.is_empty()
+    }
+
+    /// The saved searches' views follow `key`'s folder `old` to `new` (a rename).
+    pub fn rename_searched(
+        &mut self,
+        key: &AccountKey,
+        old: &str,
+        new: &str,
+        delimiter: Option<char>,
+    ) -> bool {
+        let mut changed = false;
+        for search in &mut self.searches {
+            if let View::Folder { account, name } = &mut search.view
+                && account == key
+                && let Some(to) = sealwax_domain::folders::renamed(name, old, new, delimiter)
+            {
+                *name = to;
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    /// Folds `key`'s account away or opens it again; true when that changed anything.
+    pub fn set_collapsed(&mut self, key: &AccountKey, collapsed: bool) -> bool {
+        let known = self.collapsed.iter().position(|known| known == key);
+        match (known, collapsed) {
+            (None, true) => self.collapsed.push(key.clone()),
+            (Some(index), false) => {
+                self.collapsed.remove(index);
+            }
+            _ => return false,
+        }
+        true
+    }
+}
+
+/// A view as the file reads it: `"all-inboxes"`, or `{ account, folder }`.
+fn read_view(value: Option<&Value>) -> Option<View> {
+    match value? {
+        Value::String(view) if view == ALL_INBOXES => Some(View::AllInboxes),
+        Value::Table(view) => match (
+            view.get("account").and_then(Value::as_str),
+            view.get("folder").and_then(Value::as_str),
+        ) {
+            (Some(account), Some(name)) if !name.is_empty() => {
+                AccountKey::parse(account).ok().map(|account| View::Folder {
+                    account,
+                    name: name.to_owned(),
+                })
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn view_text(view: &View) -> String {
+    match view {
+        View::AllInboxes => format!("\"{ALL_INBOXES}\""),
+        View::Folder { account, name } => format!(
+            "{{ account = \"{}\", folder = {} }}",
+            account.as_str(),
+            Value::String(name.clone())
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_or_broken_file_is_the_default() {
+        assert_eq!(Layout::parse(""), Layout::default());
+        assert_eq!(Layout::parse("not toml ["), Layout::default());
+    }
+
+    #[test]
+    fn round_trips() {
+        let layout = Layout {
+            sidebar_width: Some(240),
+            list_width: Some(420),
+            sidebar_hidden: true,
+            reader_hidden: true,
+            collapsed: vec![
+                AccountKey::parse("work").unwrap(),
+                AccountKey::parse("k3j5x8m2q9wa").unwrap(),
+            ],
+            more_open: vec![AccountKey::parse("home").unwrap()],
+            folded: BTreeMap::from([(
+                AccountKey::parse("work").unwrap(),
+                BTreeSet::from([
+                    "Kunder".to_owned(),
+                    "INBOX/Prosjekter \"Høst\" 📬".to_owned(),
+                    "a\\b".to_owned(),
+                ]),
+            )]),
+            view: Some(View::AllInboxes),
+            group_by: GroupBy::Domain,
+            searches: vec![
+                SavedSearch {
+                    name: "Fakturaer \"2026\" 📬".to_owned(),
+                    query: "from:regnskap@example.test has:attachment".to_owned(),
+                    view: View::AllInboxes,
+                },
+                SavedSearch {
+                    name: "Kunder".to_owned(),
+                    query: "is:unread".to_owned(),
+                    view: View::Folder {
+                        account: AccountKey::parse("work").unwrap(),
+                        name: "INBOX/Kunder".to_owned(),
+                    },
+                },
+            ],
+        };
+        assert_eq!(Layout::parse(&layout.to_text()), layout);
+        assert_eq!(
+            Layout::parse("group_by = \"sideways\"").group_by,
+            GroupBy::None
+        );
+        assert_eq!(
+            Layout::parse(&Layout::default().to_text()),
+            Layout::default()
+        );
+    }
+
+    #[test]
+    fn what_doesnt_fit_is_left_out() {
+        let layout = Layout::parse(
+            "sidebar_width = 9999\nlist_width = \"wide\"\nother = 1\n\
+             collapsed = [\"work\", 3, \"Not a key\", \"work\", \"home\"]\n",
+        );
+        assert_eq!(
+            layout,
+            Layout {
+                sidebar_width: None,
+                list_width: None,
+                sidebar_hidden: false,
+                reader_hidden: false,
+                collapsed: vec![
+                    AccountKey::parse("work").unwrap(),
+                    AccountKey::parse("home").unwrap()
+                ],
+                more_open: Vec::new(),
+                folded: BTreeMap::new(),
+                view: None,
+                group_by: GroupBy::None,
+                searches: Vec::new(),
+            }
+        );
+        assert_eq!(
+            Layout::parse("more_open = [\"work\", \"Not a key\", 4, \"work\"]").more_open,
+            [AccountKey::parse("work").unwrap()]
+        );
+        let folded = Layout::parse(
+            "[folded]\nwork = [\"Kunder\", 3, \"\"]\n\"Not a key\" = [\"Kunder\"]\nhome = []\n\
+             club = \"Kunder\"\n",
+        );
+        assert_eq!(
+            folded.folded,
+            BTreeMap::from([(
+                AccountKey::parse("work").unwrap(),
+                BTreeSet::from(["Kunder".to_owned()])
+            )])
+        );
+        assert_eq!(Layout::parse("list_width = 280").list_width, Some(280));
+        assert_eq!(Layout::parse("list_width = 279").list_width, None);
+        assert!(Layout::parse("sidebar_hidden = true").sidebar_hidden);
+        assert!(!Layout::parse("sidebar_hidden = \"yes\"").sidebar_hidden);
+        assert!(Layout::parse("reader_hidden = true").reader_hidden);
+        assert!(!Layout::parse("reader_hidden = 1").reader_hidden);
+        assert!(!Layout::parse("sidebar_hidden = true").reader_hidden);
+    }
+
+    #[test]
+    fn saved_searches_are_read_leniently_and_kept_by_name() {
+        let layout = Layout::parse(
+            "[[search]]\nname = \" Unread \"\nquery = \"is:unread\"\nview = \"all-inboxes\"\n\
+             [[search]]\nname = \"No query\"\nview = \"all-inboxes\"\n\
+             [[search]]\nname = \"\"\nquery = \"x\"\nview = \"all-inboxes\"\n\
+             [[search]]\nname = \"No view\"\nquery = \"x\"\n\
+             [[search]]\nname = \"Bad key\"\nquery = \"x\"\nview = { account = \"Not a key\", folder = \"INBOX\" }\n",
+        );
+        assert_eq!(
+            layout.searches,
+            [SavedSearch {
+                name: "Unread".to_owned(),
+                query: "is:unread".to_owned(),
+                view: View::AllInboxes,
+            }]
+        );
+        let long = "x".repeat(SEARCH_TEXT_MAX + 10);
+        let cut = Layout::parse(&format!(
+            "[[search]]\nname = \"{long}\"\nquery = \"{long}\"\nview = \"all-inboxes\"\n"
+        ));
+        assert_eq!(cut.searches[0].name.chars().count(), SEARCH_TEXT_MAX);
+        let mut layout = Layout::default();
+        let search = |name: &str, query: &str| SavedSearch {
+            name: name.to_owned(),
+            query: query.to_owned(),
+            view: View::AllInboxes,
+        };
+        assert!(layout.save_search(search("A", "one")));
+        assert!(layout.save_search(search("B", "two")));
+        assert!(layout.save_search(search("A", "three")));
+        assert_eq!(layout.searches, [search("A", "three"), search("B", "two")]);
+        for index in 0..SEARCHES_MAX {
+            layout.save_search(search(&index.to_string(), "x"));
+        }
+        assert_eq!(layout.searches.len(), SEARCHES_MAX);
+        assert!(!layout.save_search(search("one too many", "x")));
+        let work = AccountKey::parse("work").unwrap();
+        layout.searches = vec![SavedSearch {
+            view: View::Folder {
+                account: work.clone(),
+                name: "Kunder/Acme".to_owned(),
+            },
+            ..search("Acme", "x")
+        }];
+        assert!(layout.rename_searched(&work, "Kunder", "Klienter", Some('/')));
+        assert_eq!(
+            layout.searches[0].view,
+            View::Folder {
+                account: work,
+                name: "Klienter/Acme".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn folding_changes_the_list_once() {
+        let mut layout = Layout::default();
+        let work = AccountKey::parse("work").unwrap();
+        assert!(layout.set_collapsed(&work, true));
+        assert!(!layout.set_collapsed(&work, true));
+        assert_eq!(layout.collapsed, std::slice::from_ref(&work));
+        assert!(layout.set_collapsed(&work, false));
+        assert!(!layout.set_collapsed(&work, false));
+        assert!(layout.collapsed.is_empty());
+        assert!(layout.set_folded(&work, "Kunder", true));
+        assert!(!layout.set_folded(&work, "Kunder", true));
+        assert!(layout.is_folded(&work, "Kunder"));
+        assert!(!layout.is_folded(&work, "Kunder/Acme"));
+        assert!(layout.set_folded(&work, "Kunder", false));
+        assert!(!layout.set_folded(&work, "Kunder", false));
+        assert!(
+            layout.folded.is_empty(),
+            "an account without folds leaves the table"
+        );
+    }
+
+    #[test]
+    fn more_folders_open_and_closed() {
+        let mut layout = Layout::default();
+        let work = AccountKey::parse("work").unwrap();
+        assert!(layout.set_more_open(&work, true));
+        assert!(!layout.set_more_open(&work, true));
+        assert!(layout.to_text().contains("more_open = [\"work\"]\n"));
+        assert!(layout.set_more_open(&work, false));
+        assert!(!layout.to_text().contains("more_open"));
+    }
+
+    #[test]
+    fn the_view_round_trips_and_follows_a_rename() {
+        let work = AccountKey::parse("work").unwrap();
+        for view in [
+            View::AllInboxes,
+            View::Folder {
+                account: work.clone(),
+                name: "Kunder/\"Acme\" & co".into(),
+            },
+        ] {
+            let layout = Layout {
+                view: Some(view),
+                folded: BTreeMap::from([(work.clone(), BTreeSet::from(["Kunder".into()]))]),
+                ..Layout::default()
+            };
+            assert_eq!(Layout::parse(&layout.to_text()), layout);
+        }
+        for broken in [
+            "view = \"inbox\"",
+            "view = 3",
+            "view = { account = \"not a key!\", folder = \"INBOX\" }",
+            "view = { account = \"work\", folder = \"\" }",
+            "view = { account = \"work\" }",
+        ] {
+            assert_eq!(Layout::parse(broken).view, None, "{broken}");
+        }
+        let mut layout = Layout {
+            view: Some(View::Folder {
+                account: work.clone(),
+                name: "Kunder/Acme".into(),
+            }),
+            ..Layout::default()
+        };
+        assert!(layout.rename_folded(&work, "Kunder", "Clients", Some('/')));
+        assert_eq!(
+            layout.view,
+            Some(View::Folder {
+                account: work.clone(),
+                name: "Clients/Acme".into(),
+            })
+        );
+        assert!(!layout.rename_folded(
+            &AccountKey::parse("home").unwrap(),
+            "Clients",
+            "X",
+            Some('/')
+        ));
+    }
+
+    #[test]
+    fn a_renamed_folder_keeps_its_fold_and_its_subfolders() {
+        let work = AccountKey::parse("work").unwrap();
+        let mut layout = Layout::default();
+        layout.set_folded(&work, "INBOX.Kunder", true);
+        layout.set_folded(&work, "INBOX.Kunder.Acme", true);
+        layout.set_folded(&work, "INBOX.Kunder2", true);
+        assert!(layout.rename_folded(&work, "INBOX.Kunder", "INBOX.Klienter", Some('.')));
+        assert_eq!(
+            layout.folded[&work],
+            BTreeSet::from([
+                "INBOX.Klienter".to_owned(),
+                "INBOX.Klienter.Acme".to_owned(),
+                "INBOX.Kunder2".to_owned(),
+            ])
+        );
+        assert!(!layout.rename_folded(&work, "Nowhere", "Else", Some('.')));
+        assert!(!layout.rename_folded(
+            &AccountKey::parse("home").unwrap(),
+            "INBOX.Klienter",
+            "X",
+            Some('.')
+        ));
+    }
+}

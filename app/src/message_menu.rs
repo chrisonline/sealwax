@@ -18,8 +18,8 @@ use crate::window::panes::{classed, named};
 use gtk4 as gtk;
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
-use sealwax_domain::actions::ActionId;
 use sealwax_domain::compose::ReplyKind;
+use sealwax_ui_model::actions::ActionId;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -104,12 +104,14 @@ fn sections(state: &AppState, targets: &[Target]) -> Vec<Vec<Entry>> {
             },
             plain(ActionId::ReplySender),
             plain(ActionId::Forward),
+            plain(ActionId::ForwardAsAttachment),
         ]
     } else {
         vec![
             plain(ActionId::Reply),
             plain(ActionId::ReplyAll),
             plain(ActionId::Forward),
+            plain(ActionId::ForwardAsAttachment),
         ]
     };
     vec![

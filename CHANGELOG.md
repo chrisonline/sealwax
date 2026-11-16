@@ -7,8 +7,72 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **Proton Mail labels show on your mail:** a message you labelled in Proton now shows its labels as small chips after its subject in the message list, and under the sender in the reader. Sealwax keeps the label folders that Proton Mail Bridge lists under **Labels** up to date by itself, so the labels show without opening those folders first. Bridge doesn't pass on Proton's label colours, so give each label a colour of your own under `[labels]` in `config.toml` (`Work = "teal"`), from the eight account colours; labels without one are grey.
 - **Label your mail from Sealwax:** **Label…** (`Shift+L`, the right-click menu, the reader's ⋮ menu or the palette) lists the account's Proton labels with a tick on those the message has. Tick or untick as many as you like, on one message or a selection: the chips change at once and Proton follows through Bridge.
 - **Messages open at once with GNOME's text scaling:** with a text scaling factor other than 100 %, Sealwax waited three seconds before showing each message, and made its body taller than its text. It now measures messages in the right unit.
-- **HTML signatures:** a signature can now be a designed HTML file, with your logo, colours, fonts and links, per account and per sender address ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)). Name it with `signature_html = "signatures/work/signature.html"` in `accounts.toml` and put its images beside it: they go inside the message, so recipients see the logo without loading anything from the web. If the file can't be used, the composer says why and your plain signature stands in.
 - **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
+
+## 1.5.0 — 2026-11-16
+
+Go to any folder, forward messages as attachments, save searches, see your unread mail in the bar, and sign with an HTML signature.
+
+- **Go to Folder…** (`g` then `f`): a picker over every account's folders, All Inboxes first. Type a few letters, then Enter shows the folder ([issue #12](https://github.com/PixDevsApps/sealwax/issues/12)).
+- **Forward as Attachment:** in the message menu, the reader's **More** menu and the palette. It attaches the selected messages whole, as `.eml` files named after their subjects, so the recipient gets them exactly as they came; select several to forward them together.
+- **Saved searches:** while a search runs, **Save Search…** (in the palette) keeps it in a new **Searches** section of the sidebar, and a click runs it again. Right-click one to rename or remove it.
+- **Your unread count in the bar** ([issue #17](https://github.com/PixDevsApps/sealwax/issues/17)): while Sealwax runs, it shares the number of unread messages in your Inboxes in a small file, so other programs can show it without reading your mail. `sealwax --unread` prints it. A widget for Omarchy's bar is in [`contrib/omarchy-plugin`](contrib/omarchy-plugin): Sealwax's icon with the number beside it, and a click that opens Sealwax.
+- **HTML signatures** ([issue #6](https://github.com/PixDevsApps/sealwax/issues/6)): a signature with your name, title, company, phone, website and logo. Right-click the account in the sidebar and choose **Signature…**: fill in the form, choose a logo, check the preview and save. You can also write your own HTML file in `~/.config/sealwax/signatures/` and name it with `signature_html` in `accounts.toml`. Its images go inside the message, never as links. Changing **From** changes the signature, and if the file or an image can't be used, a notice says why and your plain signature is used instead. The user guide has the details.
+- **Tidier inside:** addresses are compared the same way everywhere, so `Kari@Example.com` and `kari@example.com` are one person in every check, and an address with international letters in its domain matches its ASCII form. The keyboard's and the window's code moved into a part of their own.
+
+## 1.4.2 — 2026-11-16
+
+Up-to-date building blocks, and easier to find.
+
+- **Updated libraries:** the database library (rusqlite 0.43) and the HTML cleaner Sealwax uses when you reply to or forward an HTML message (ammonia 4.1.9). Both updates clear published advisories, none of which reached Sealwax: it uses your system's SQLite, not the copy the advisory was about, and its HTML cleaner keeps no SVG, MathML or style element. [SECURITY.md](docs/SECURITY.md) lists what was checked.
+- **SQLite 3.45.3 or later:** the package now asks for it (3.43 before). Arch Linux and Omarchy have had a newer one for a long time; the Flatpak brings its own.
+- **Easier to find:** software centres and app launchers find Sealwax by words such as Outlook, Microsoft 365, Gmail, offline, keyboard and privacy, and its website link is now [Sealwax's page](https://pixdevs.com/omarchy/sealwax/). The user guide stays under **Help → User Guide**.
+
+## 1.4.1 — 2026-11-14
+
+An Undo that could no longer undo is gone from the toast.
+
+- **Undo leaves the toast when its time is up** ([PR #37](https://github.com/PixDevsApps/sealwax/pull/37), thanks @lama7): after **Empty Trash**, or **Delete** in an account's Trash, the toast's **Undo** stands for 7 seconds. A toast stays on screen for as long as the pointer rests on it or the keyboard focus is in it, though, and it went on showing **Undo** after those seconds, when the messages were already deleted for good and Undo could only say that they can't be brought back. The button now goes when its time is up, and the toast stays to be read. Nothing more was ever deleted than you asked for.
+- **The keyboard stays with the list:** if **Undo** itself had the keyboard focus when it went, the focus returns to the message list, so its keys keep working.
+- **The same after Send:** "Message queued" also kept its **Undo** on screen after the 7 seconds, where a click did nothing at all. It goes too, and the message is sent as before.
+- **Other toasts keep their Undo** (archive, move, junk, star, read): those can be undone after the 7 seconds too.
+
+## 1.4.0 — 2026-11-14
+
+Empty Trash.
+
+- **Empty Trash** ([PR #35](https://github.com/PixDevsApps/sealwax/pull/35), thanks @lama7): right-click an account's Trash folder in the sidebar (or press Menu or Shift+F10 on it) and choose **Empty Trash**, the first item there. It deletes the folder's messages for good, here and on the server, including the older mail Sealwax never downloaded, so the folder is still empty when you open it again. Mail you deleted a moment before, still on its way to the Trash, goes too.
+- **Nothing asks first:** **Undo** in the toast stands for the usual 7 seconds, as when you delete from the Trash. The toast names the account, since every account has its own Trash, and emptying one leaves the others alone.
+- **A key, if you want one:** Empty Trash has no key, but you can give it one in `keys.toml` (`empty-trash`). The key works only while the list shows a Trash folder, not while it shows search results.
+- **On a mail server without UIDPLUS**, which can't delete chosen messages alone, emptying the Trash also removes any message another mail program left marked as deleted there.
+
+## 1.3.2 — 2026-11-13
+
+Help, also without a GitHub account.
+
+- **Help in the main menu:** a new **Help** submenu, which opens as you point at it, with **User Guide**, which opens the [online user guide](https://pixdevs.com/guides/sealwax/), **Contact Support…**, **Report an Issue**, which opens a new issue on GitHub, and **About Sealwax**. **Check for Updates…** keeps its own place below it. The command palette has all four too.
+- **Contact Support…** shows Sealwax's support address, **support@pixdevs.com**, and a few lines that help find a problem: Sealwax's version, how it was installed, your Linux system and desktop, and how many accounts it has. Nothing about your mail, addresses or servers is in them. Copy either with one click, or, once you have an account, choose **Write to Support** to start the message in Sealwax with those lines in it; nothing is sent until you send it.
+- **Can't add an account?** When the setup assistant can't sign in, or Microsoft's sign-in seems stuck, a **Get help from Sealwax's support** button opens the same dialog, so you can write from your webmail.
+- **About Sealwax** shows the version, the guide, support and the licence, with the same lines under Troubleshooting.
+- **Software centres** now link to the online guide, and Sealwax's description there names the support address.
+
+## 1.3.1 — 2026-11-12
+
+The list on its own, without the reading pane.
+
+- **Hide the reading pane** ([#34](https://github.com/PixDevsApps/sealwax/issues/34)): **Toggle Reading Pane**, in the main menu under Toggle Sidebar and in the command palette, shows the message list on its own beside the folders, in a window of any width. Enter or a double click opens a message in the list's place, and Escape or the back button goes back to the list. The main menu's button moves to the start of the bar, so it is at hand in the list and in a message. A message is marked read when you open it, not when you select it. Sealwax remembers the choice, and the reader beside the list stays the default ([user guide](docs/USER_GUIDE.md#the-window)).
+- **The keyboard stays in the list when the window changes width:** when Sealwax's window got narrower or wider past 1280 or 900 px, as it does when a tiling desktop puts another window beside it, the list's keys (`j`, `k`, Enter and the others) stopped working until you clicked a message. The list, or the message you were reading, now keeps the keyboard.
+- **One folder the server won't report on no longer hides the rest:** when a mail server refuses to give one folder's message counts, Sealwax lists that folder without them and carries on. Before, the account showed no folders at all. This concerns servers that report on folders one at a time.
+- **A build from source prints no warnings:** the eight that came from the two libraries Sealwax carries its own copies of are gone. They were harmless.
+- **The Flatpak's install command** now starts from the latest release on GitHub ([INSTALL.md](INSTALL.md#on-other-linux-systems-flatpak)). The Flatpak and its updates come from the same repository as before, and the command 1.3.0 gave keeps working.
+
+## 1.3.0 — 2026-11-11
+
+Sealwax as a Flatpak, for Linux systems other than Omarchy.
+
+- **Install Sealwax on Fedora, Ubuntu, Mint and other Linux systems** with one command, from Sealwax's own Flatpak repository, and get its updates with `flatpak update` or your software centre ([INSTALL.md](INSTALL.md#on-other-linux-systems-flatpak)). The Flatpak follows your system's light or dark style. On Omarchy the package stays the better way: the Flatpak reads Omarchy's theme and Hyprland's corners, but not Omarchy's font, and Start at Login can't work there. Sealwax isn't on Flathub ([why](docs/DECISIONS.md#adr-027--a-flatpak-from-sealwaxs-own-repository-2026-11-11)).
+- **Software centres can describe Sealwax:** both packages now carry its AppStream information, with a summary, screenshots and these release notes.
+- **No needless reconnect at start:** when the system first says there's no network and corrects itself a moment later, as Flatpak's network monitor does, Sealwax no longer reconnects every account.
 
 ## 1.2.2 — 2026-11-11
 

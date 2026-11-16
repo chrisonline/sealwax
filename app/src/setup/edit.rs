@@ -44,7 +44,8 @@ impl Editable {
     /// The label to write for `typed`: none for an empty one or the address typed again.
     fn label_for(&self, typed: &str) -> Option<String> {
         let typed = typed.trim();
-        (!typed.is_empty() && !typed.eq_ignore_ascii_case(&self.address)).then(|| typed.to_owned())
+        (!typed.is_empty() && !sealwax_domain::address::same(typed, &self.address))
+            .then(|| typed.to_owned())
     }
 }
 
@@ -197,7 +198,7 @@ mod tests {
 
     fn account(label: Option<&str>) -> Editable {
         Editable {
-            key: AccountKey("work".to_owned()),
+            key: AccountKey::parse("work").unwrap(),
             address: "kari@example.test".to_owned(),
             label: label.map(str::to_owned),
             color: None,

@@ -173,7 +173,18 @@ fn account_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Account> {
         id: AccountId(row.get(0)?),
         name: row.get(1)?,
         address: row.get(2)?,
-        key: row.get::<_, Option<String>>(3)?.map(AccountKey),
+        key: row
+            .get::<_, Option<String>>(3)?
+            .map(|key| {
+                AccountKey::parse(&key).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        3,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })
+            })
+            .transpose()?,
     })
 }
 
@@ -396,7 +407,7 @@ impl Reader {
         let version = version(&tx)?;
         let value = tx
             .prepare_cached("SELECT id, name, address, key FROM accounts WHERE key = ?1")?
-            .query_row([&key.0], account_row)
+            .query_row([&key.as_str()], account_row)
             .optional()?;
         Ok(Versioned { version, value })
     }
@@ -421,9 +432,10 @@ impl Reader {
         let version = version(&tx)?;
         let value = tx
             .prepare_cached(&format!(
-                "SELECT id, account_id, name, role, selectable, total_count + below_floor, {}, \
+                "SELECT id, account_id, name, role, selectable, {}, {}, \
                    delimiter, attributes \
                  FROM folders ORDER BY account_id, id",
+                super::overlay::TOTAL_SQL,
                 super::overlay::UNREAD_SQL
             ))?
             .query_map([], |row| {

@@ -393,6 +393,20 @@ fn subjects_get_one_prefix() {
 }
 
 #[test]
+fn forwarding_several_messages_names_the_first_and_counts_the_rest() {
+    assert_eq!(
+        forward_subjects("Fwd: Kvartalstall", 1),
+        "Fwd: Kvartalstall"
+    );
+    assert_eq!(
+        forward_subjects("Kvartalstall", 3),
+        "Fwd: Kvartalstall and 2 more"
+    );
+    assert_eq!(forward_subjects("", 2), "Fwd: 2 messages");
+    assert_eq!(forward_subjects("x", 0), "Fwd: x");
+}
+
+#[test]
 fn the_draft_carries_the_plan() {
     let original = Original::parse(MESSAGE.as_bytes());
     let reply = plan(&original, ReplyKind::ReplyAll, &senders());
@@ -450,11 +464,53 @@ proptest! {
         for address in &all {
             prop_assert!(!identity::is_own(&senders(), &address.email));
         }
-        let keys: Vec<String> = all.iter().map(|a| address::key(&a.email)).collect();
+        let keys: Vec<_> = all.iter().map(|a| crate::address::AddressKey::of(&a.email)).collect();
         let mut unique = keys.clone();
         unique.sort();
         unique.dedup();
         prop_assert_eq!(keys.len(), unique.len());
         prop_assert_eq!(reply.to.first().map(|a| a.email.as_str()), Some("marius@example.test"));
     }
+}
+
+#[test]
+fn the_quick_reply_answers_the_latest_message_from_someone_else() {
+    let mine = vec!["Me@Example.test".to_owned()];
+    let target = |messages: &[(u8, &'static str, bool)], mine: &[String]| {
+        reply_target(messages, mine, |m| m.1, |m| m.2).map(|m| m.0)
+    };
+    let conversation = [
+        (1, "kari@example.test", false),
+        (2, "ola@example.test", false),
+        (3, "me@example.test", false),
+    ];
+    assert_eq!(target(&conversation, &mine), Some(2));
+    assert_eq!(target(&conversation, &[]), Some(3));
+    let with_draft = [
+        (1, "kari@example.test", false),
+        (2, "kari@example.test", true),
+    ];
+    assert_eq!(target(&with_draft, &mine), Some(1));
+    let own = [(1, "me@example.test", false), (2, "ME@example.test", false)];
+    assert_eq!(target(&own, &mine), Some(2));
+    assert_eq!(target(&[(1, "kari@example.test", true)], &mine), None);
+    assert_eq!(target(&[], &mine), None);
+}
+
+#[test]
+fn everyone_is_reply_alls_to_then_cc_without_the_user() {
+    let headers = Headers {
+        from: vec![Address::new("Kari", "kari@example.test")],
+        to: vec![
+            Address::new("", "me@example.test"),
+            Address::new("Ola", "ola@example.test"),
+        ],
+        cc: vec![Address::new("Per", "per@example.test")],
+        ..Headers::default()
+    };
+    let all = everyone(&headers, &["me@example.test".to_owned()]);
+    assert_eq!(
+        emails(&all),
+        ["kari@example.test", "ola@example.test", "per@example.test"]
+    );
 }

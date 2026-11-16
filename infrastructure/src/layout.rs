@@ -1,10 +1,10 @@
-//! `layout.toml` on disk (`domain::layout`): read leniently, written atomically (0600 in a 0700
+//! `layout.toml` on disk (`ui_model::layout`): read leniently, written atomically (0600 in a 0700
 //! folder) by the same writer as `accounts.toml`. A file that can't be read is the default
 //! layout; nothing in it is ever logged.
 
 use crate::accounts::replace;
 use crate::settings_files::read_optional;
-use sealwax_domain::layout::Layout;
+use sealwax_ui_model::layout::Layout;
 use std::io;
 use std::path::Path;
 
@@ -41,14 +41,16 @@ mod tests {
             sidebar_width: Some(250),
             list_width: None,
             sidebar_hidden: false,
-            collapsed: vec![AccountKey("work".into())],
-            more_open: vec![AccountKey("work".into())],
+            reader_hidden: false,
+            collapsed: vec![AccountKey::parse("work").unwrap()],
+            more_open: vec![AccountKey::parse("work").unwrap()],
             folded: Default::default(),
-            view: Some(sealwax_domain::layout::View::Folder {
-                account: AccountKey("work".into()),
+            view: Some(sealwax_ui_model::layout::View::Folder {
+                account: AccountKey::parse("work").unwrap(),
                 name: "INBOX".into(),
             }),
             group_by: sealwax_domain::senders::GroupBy::Sender,
+            searches: Vec::new(),
         };
         write(&path, &layout).unwrap();
         assert_eq!(read(&path), layout);

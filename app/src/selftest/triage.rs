@@ -6,7 +6,7 @@
 //! | --- | --- |
 //! | `key KEY [COUNT]` | Presses KEY (a GTK accelerator: `j`, `<Shift>i`, `numbersign`, `<Control>z`), COUNT times, to the focused widget |
 //! | `type TEXT` | Types TEXT, a character at a time |
-//! | `focus list\|search\|reader\|NAME` | Puts the keyboard focus there |
+//! | `focus list\|search\|reader\|toast\|NAME` | Puts the keyboard focus there (`toast`: the toast's button) |
 //! | `click-row POS [ctrl\|shift\|ctrl+shift]` | Clicks a list row with the primary button |
 //! | `check-row POS` | Ticks or unticks a row's checkbox, as a click on it does |
 //! | `hover-row POS` | Moves the pointer over a row |
@@ -32,10 +32,11 @@
 //! | `assert-reader-page empty\|message\|batch` | What the reader pane shows |
 //! | `assert-undoable BOOL` | Whether Undo has something to undo |
 //! | `assert-toasts N` | Toasts on screen |
+//! | `assert-toast-button none\|LABEL` | The toast on screen offers no button, or one labelled LABEL |
 //! | `assert-row-check POS none\|true\|false` | A row's checkbox: hidden, ticked, not ticked |
 //! | `assert-row-quick POS BOOL` | Whether a row shows its quick actions |
 //! | `assert-move-to open\|shown\|selected VALUE` | The Move to… picker: open (BOOL), the folders shown (`A,B`), the folder Enter picks |
-//! | `assert-sidebar-menu closed\|enabled\|disabled [NAME]` | The sidebar's menu, and its item named NAME, else its first (Mark Folder as Read) |
+//! | `assert-sidebar-menu closed\|enabled\|disabled [NAME]` | The sidebar's menu, and its item named NAME, else its first (Empty Trash on a `\Trash` folder, Mark Folder as Read on any other) |
 //! | `assert-action-log NAMES\|none` | The commands run since the last check, in order (`win.archive,win.star`) |
 
 use super::{Harness, StepResult, WAIT_TIMEOUT, boolean, broadway, equal, number};
@@ -45,9 +46,9 @@ use gtk4::glib::translate::IntoGlib;
 use gtk4::prelude::*;
 use gtk4::{gdk, gio, glib};
 use sealwax_domain::account::AccountKey;
-use sealwax_domain::actions::{ActionId, ActionKind, Scope};
 use sealwax_domain::model::FolderRole;
 use sealwax_infrastructure::store::{FolderSpec, NewAccount};
+use sealwax_ui_model::actions::{ActionId, ActionKind, Scope};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -63,6 +64,7 @@ pub(super) const COMMANDS: &[(&str, usize, usize)] = &[
     ("hover", 1, 1),
     ("drag", 2, 2),
     ("double-click", 1, 1),
+    ("double-click-row", 1, 1),
     ("click-quick", 2, 2),
     ("click", 1, 2),
     ("triage-account", 2, 2),
@@ -84,11 +86,14 @@ pub(super) const COMMANDS: &[(&str, usize, usize)] = &[
     ("assert-undoable", 1, 1),
     ("assert-pending", 1, 1),
     ("assert-toasts", 1, 1),
+    ("assert-toast-button", 1, 1),
     ("assert-row-check", 2, 2),
     ("assert-row-quick", 2, 2),
     ("assert-move-to", 2, 2),
     ("assert-sidebar-menu", 1, 2),
     ("assert-action-log", 1, 1),
+    ("search-menu", 1, 1),
+    ("assert-saved-searches", 1, 1),
 ];
 
 thread_local! {
@@ -130,6 +135,14 @@ pub(super) async fn step(harness: &Harness, command: &str, args: &[String]) -> S
             let row = row_widget(harness, arg(0))?;
             let state = modifiers(args.get(1).map_or("none", String::as_str))?;
             click_widget(harness, row.upcast_ref(), state, 1).await
+        }
+        "double-click-row" => {
+            let row = row_widget(harness, arg(0))?;
+            let (x, y) = centre(harness, row.upcast_ref())?;
+            broadway::double_click(x, y).map_err(|error| error.to_string())?;
+            glib::timeout_future(Duration::from_millis(100)).await;
+            harness.wait_until_settled().await;
+            Ok(())
         }
         "check-row" => {
             let row = row_widget(harness, arg(0))?;
@@ -296,6 +309,24 @@ pub(super) async fn step(harness: &Harness, command: &str, args: &[String]) -> S
             click_button(harness, &button).await
         }
         "action-log" => start_log(harness),
+        "search-menu" => {
+            let index = number(arg(0))?;
+            harness.wait_until_settled().await;
+            if harness.window()?.sidebar().open_search_menu(index) {
+                Ok(())
+            } else {
+                Err(format!("the sidebar has no saved search {index}"))
+            }
+        }
+        "assert-saved-searches" => {
+            let names = harness.window()?.sidebar().searches();
+            let shown = if names.is_empty() {
+                "none".to_owned()
+            } else {
+                names.join(",")
+            };
+            equal("saved searches", shown.as_str(), arg(0))
+        }
         "measure-triage" => measure(harness, arg(0), number(arg(1))?).await,
         "hold-reader-layout" => {
             let reader = harness.state.reader().ok_or("the reader isn't installed")?;
@@ -364,6 +395,21 @@ async fn check(harness: &Harness, assertion: &str, args: &[String]) -> StepResul
             boolean(arg(0))?,
         ),
         "assert-toasts" => equal("toasts on screen", toasts(harness)?.len(), number(arg(0))?),
+        "assert-toast-button" => {
+            if toasts(harness)?.is_empty() {
+                return Err("no toast on screen".to_owned());
+            }
+            let labels: Vec<String> = toast_buttons(harness)?
+                .iter()
+                .filter_map(|button| button.label().map(|label| label.to_string()))
+                .collect();
+            let shown = if labels.is_empty() {
+                "none".to_owned()
+            } else {
+                labels.join(",")
+            };
+            equal("the toast's button", shown.as_str(), arg(0))
+        }
         "assert-row-check" => {
             let row = row_widget(harness, arg(0))?;
             let state = match row.check_state() {
@@ -461,7 +507,7 @@ fn menu_item(harness: &Harness, name: Option<&str>) -> Result<gtk::Button, Strin
 }
 
 /// The widget `name` names for `focus` and `assert-focus`: `list`, `search`, `reader`, the
-/// Move to… picker's entry `move-to`, or a named widget.
+/// toast's button `toast`, the Move to… picker's entry `move-to`, or a named widget.
 fn focus_target(harness: &Harness, name: &str) -> Result<gtk::Widget, String> {
     match name {
         "list" => Ok(super::mail::list(harness)?.list_view().clone().upcast()),
@@ -479,6 +525,11 @@ fn focus_target(harness: &Harness, name: &str) -> Result<gtk::Widget, String> {
             });
             Ok(plain.unwrap_or_else(|| reader.widget()))
         }
+        "toast" => toast_buttons(harness)?
+            .into_iter()
+            .next()
+            .map(|button| button.upcast())
+            .ok_or_else(|| "no toast offers a button".to_owned()),
         "move-to" => move_to::current()
             .and_then(|picker| picker.search_entry())
             .map(|entry| entry.upcast())
@@ -734,7 +785,7 @@ async fn add_account(harness: &Harness, name: &str, key: &str) -> StepResult {
         .store()
         .ok_or("the store is not open")?
         .ensure_account(
-            AccountKey(key.to_owned()),
+            AccountKey::parse(key).map_err(|_| format!("{key:?} is not an account key"))?,
             NewAccount {
                 name: name.to_owned(),
                 address: format!("{local}@example.test"),

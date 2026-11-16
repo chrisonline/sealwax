@@ -1,10 +1,7 @@
-//! The addresses an account sends from and their signatures (ML-070, PRD A6). A signature is
-//! plain text (accepted at the M6 gate), shown below the body after a `-- ` line, or an HTML
-//! signature the app read from its file (issue #6, [`super::signature_html`]); either sits
-//! inside a `div` of class [`SIGNATURE_CLASS`] so the composer can swap it when the sender
-//! changes.
+//! The addresses an account sends from and their signatures (ML-070, PRD A6). Signatures are
+//! plain text in 1.0 (accepted at the M6 gate): the composer shows them below the body after a `-- ` line,
+//! inside a `div` of class [`SIGNATURE_CLASS`] so it can swap them when the sender changes.
 
-use super::address;
 use super::clean::SIGNATURE_CLASS;
 use super::text;
 use crate::account::{AccountSettings, Identity};
@@ -24,7 +21,7 @@ pub fn senders(account: &AccountSettings) -> Vec<Identity> {
     for identity in &account.identities {
         if !out
             .iter()
-            .any(|known| address::same(&known.address, &identity.address))
+            .any(|known| crate::address::same(&known.address, &identity.address))
         {
             out.push(identity.clone());
         }
@@ -36,7 +33,7 @@ pub fn senders(account: &AccountSettings) -> Vec<Identity> {
 pub fn is_own(senders: &[Identity], email: &str) -> bool {
     senders
         .iter()
-        .any(|sender| address::same(&sender.address, email))
+        .any(|sender| crate::address::same(&sender.address, email))
 }
 
 /// The identity a reply to a message with `headers` goes out from: the one that sent it when
@@ -47,7 +44,7 @@ pub fn reply_sender<'s>(senders: &'s [Identity], headers: &Headers) -> Option<&'
         list.iter().find_map(|recipient| {
             senders
                 .iter()
-                .find(|sender| address::same(&sender.address, &recipient.email))
+                .find(|sender| crate::address::same(&sender.address, &recipient.email))
         })
     };
     find(&headers.from)
@@ -63,32 +60,27 @@ pub fn from_address(identity: &Identity) -> Address {
 
 /// A signature as the composer inserts it below the body. Its `Debug` prints lengths only.
 #[derive(Clone, PartialEq, Eq)]
-pub struct Signature {
+pub struct SignatureBlock {
     /// `<div class="sw-signature"><div>-- </div>…</div>`, one `div` per line.
     pub html: String,
     /// `-- ` on a line of its own, then the text.
     pub text: String,
 }
 
-impl fmt::Debug for Signature {
+impl fmt::Debug for SignatureBlock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Signature")
+        f.debug_struct("SignatureBlock")
             .field("html_len", &self.html.len())
             .field("text_len", &self.text.len())
             .finish()
     }
 }
 
-/// The signature mail sent as `identity` carries: its HTML signature once the app has read it,
-/// else (none, or its file couldn't be read) its plain one.
-pub fn signature_of(identity: &Identity) -> Option<Signature> {
-    let html = identity
-        .signature_html
-        .as_ref()
-        .and_then(|html| html.loaded.clone())
-        .and_then(Result::ok);
-    html.or_else(|| identity.signature.as_deref().and_then(signature))
-}
+/// The media type of a draft's hidden part that holds a designed signature's styled HTML
+/// (issue #6): Sealwax's own, made from the Signature… form's fields. The composer shows the
+/// signature from it and the MIME builder puts it in place of the signature's `div` when the
+/// message is built; it is never sent as a part, and one read back from a server is dropped.
+pub const STYLED_SIGNATURE_TYPE: &str = "application/x-sealwax-signature";
 
 /// The separator line in a signature's HTML: `--` and a no-break space, which survives HTML's
 /// whitespace rules; the plain-text part turns the line back into `-- ` (RFC 3676 4.3).
@@ -96,18 +88,34 @@ pub const SEPARATOR_HTML: &str = "<div>--&nbsp;</div>";
 
 /// `text` as a signature; `None` when it is empty. Trailing white space and blank lines at the
 /// ends are dropped.
-pub fn signature(text: &str) -> Option<Signature> {
+pub fn signature(text: &str) -> Option<SignatureBlock> {
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = text.lines().map(str::trim_end).collect();
     let first = lines.iter().position(|line| !line.is_empty())?;
     let last = lines.iter().rposition(|line| !line.is_empty())?;
     let body = lines[first..=last].join("\n");
-    Some(Signature {
+    Some(SignatureBlock {
         html: format!(
             "<div class=\"{SIGNATURE_CLASS}\">{SEPARATOR_HTML}{}</div>",
             text::to_html(&body)
         ),
         text: format!("-- \n{body}"),
+    })
+}
+
+/// An HTML signature (issue #6) as the composer inserts it: `cleaned`, HTML that has been through
+/// [`super::clean::clean_signature`], under the separator line in the signature's `div`; its
+/// plain text is the HTML's. `None` when it shows nothing.
+pub fn html_signature(cleaned: &str) -> Option<SignatureBlock> {
+    let cleaned = cleaned.trim();
+    let text = crate::message::html_to_text(cleaned);
+    let text = text.trim_end();
+    if text.trim().is_empty() && !cleaned.contains("<img") {
+        return None;
+    }
+    Some(SignatureBlock {
+        html: format!("<div class=\"{SIGNATURE_CLASS}\">{SEPARATOR_HTML}{cleaned}</div>"),
+        text: format!("-- \n{text}"),
     })
 }
 
@@ -124,7 +132,7 @@ mod tests {
             certificate: None,
         };
         AccountSettings {
-            key: AccountKey("work".into()),
+            key: AccountKey::parse("work").unwrap(),
             name: "Ada Lovelace".into(),
             label: None,
             color: None,
@@ -201,5 +209,21 @@ mod tests {
         );
         assert_eq!(super::signature(" \n\t\n"), None);
         assert!(!format!("{signature:?}").contains("Ada"));
+    }
+
+    #[test]
+    fn an_html_signature_goes_under_the_separator() {
+        let block =
+            html_signature("<div><b>Ada</b> <a href=\"https://example.test\">Lovelace</a></div>")
+                .unwrap();
+        assert_eq!(
+            block.html,
+            "<div class=\"sw-signature\"><div>--&nbsp;</div><div><b>Ada</b> \
+             <a href=\"https://example.test\">Lovelace</a></div></div>"
+        );
+        assert!(block.text.starts_with("-- \n"));
+        assert!(block.text.contains("Ada"));
+        assert!(html_signature("<img src=\"cid:logo@example.test\">").is_some());
+        assert_eq!(html_signature(" <div> </div> "), None);
     }
 }

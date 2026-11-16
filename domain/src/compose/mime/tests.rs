@@ -2,7 +2,7 @@
 //! (`archive/spikes/s7-composer/src/fixtures.rs` and `roundtrip.rs`).
 
 use super::*;
-use crate::compose::{DraftSource, ReplyKind, reply, stored};
+use crate::compose::{DraftSource, ReplyKind, identity, reply, stored};
 use crate::model::{AccountId, BlobKey, MessageId as StoredId};
 use mail_parser::{Message, MessageParser, MimeHeaders, PartType};
 use proptest::prelude::*;
@@ -263,7 +263,12 @@ fn mailboxes(value: Option<&mail_parser::Address<'_>>) -> Vec<(String, String)> 
 
 fn expected(list: &[Address]) -> Vec<(String, String)> {
     list.iter()
-        .map(|a| (header_text(&a.name), address::ascii(&a.email).unwrap()))
+        .map(|a| {
+            (
+                header_text(&a.name),
+                crate::address::wire(&a.email).unwrap(),
+            )
+        })
         .collect()
 }
 
@@ -626,6 +631,111 @@ fn inline_parts_the_html_dropped_are_left_out() {
 }
 
 #[test]
+fn a_forwarded_message_goes_as_it_is_or_as_a_file() {
+    let original = b"From: Ola Nordmann <ola@example.org>\r\nSubject: Kvartalstall\r\n\r\nHei Kari,\r\ntallene kommer.\r\n".to_vec();
+    let eight_bit = "From: Ola <ola@example.org>\r\nSubject: Blåbær\r\n\r\nBlåbær\r\n"
+        .as_bytes()
+        .to_vec();
+    let bare_line_feeds = b"From: Ola <ola@example.org>\nSubject: x\n\nHei\n".to_vec();
+    let long_line = [b"Subject: x\r\n\r\n".as_slice(), &[b'a'; 999], b"\r\n"].concat();
+    for (data, as_is) in [
+        (original, true),
+        (eight_bit, false),
+        (bare_line_feeds, false),
+        (long_line, false),
+    ] {
+        let parts = vec![data];
+        let draft = Draft {
+            parts: vec![part("Kvartalstall.eml", "message/rfc822", &parts[0], None)],
+            ..draft("Fwd: Kvartalstall", "<div>Se vedlagt.</div>")
+        };
+        let built = build(&draft, DATE, &slices(&parts)).unwrap();
+        let raw = String::from_utf8_lossy(&built.transmitted);
+        let message = MessageParser::default().parse(&built.transmitted).unwrap();
+        let attached = children(&message, 0)[1];
+        if as_is {
+            assert_eq!(content_type(&message, attached), "message/rfc822");
+            assert!(raw.contains("Content-Transfer-Encoding: 7bit\r\n"));
+            assert!(!raw.contains("Content-Transfer-Encoding: base64"));
+            assert!(
+                raw.contains(
+                    "\r\n\r\nFrom: Ola Nordmann <ola@example.org>\r\nSubject: Kvartalstall\r\n"
+                ),
+                "the original's bytes, unchanged"
+            );
+            let PartType::Message(inner) = &message.parts[attached].body else {
+                panic!("not read as a message");
+            };
+            assert_eq!(inner.subject(), Some("Kvartalstall"));
+        } else {
+            assert_eq!(content_type(&message, attached), "application/octet-stream");
+            assert_eq!(
+                message.parts[attached].contents(),
+                parts[0].as_slice(),
+                "the original's bytes, in base64"
+            );
+        }
+        assert_eq!(
+            message.parts[attached].attachment_name(),
+            Some("Kvartalstall.eml")
+        );
+        assert!(built.transmitted.is_ascii());
+    }
+}
+
+#[test]
+fn a_designed_signature_is_put_in_place_and_never_sent_as_a_part() {
+    let styled = "<table><tr><td style=\"color:#a3232f\"><b>Ada</b></td>\
+                  <td><img src=\"cid:logo@example.com\"></td></tr></table>";
+    let data = vec![styled.as_bytes().to_vec(), image()];
+    let draft = Draft {
+        parts: vec![
+            part(
+                "signature.html",
+                identity::STYLED_SIGNATURE_TYPE,
+                &data[0],
+                None,
+            ),
+            part("logo.png", "image/png", &data[1], Some("logo@example.com")),
+        ],
+        ..draft(
+            "x",
+            "<div>Hei</div><div class=\"sw-signature\"><div>--&nbsp;</div><div><b>Ada</b>\
+             <div><img src=\"cid:logo@example.com\"></div></div></div><div>after</div>",
+        )
+    };
+    let built = build(&draft, DATE, &slices(&data)).unwrap();
+    let message = MessageParser::default().parse(&built.transmitted).unwrap();
+    let html = message.body_html(0).unwrap().into_owned();
+    assert!(html.contains("color:#a3232f"), "{html}");
+    assert!(html.contains("<div>Hei</div>"));
+    assert!(html.contains("</table></div><div>after</div>"), "{html}");
+    assert_eq!(html.matches("--&nbsp;").count(), 1);
+    assert!(
+        !String::from_utf8_lossy(&built.transmitted).contains(identity::STYLED_SIGNATURE_TYPE),
+        "the hidden part isn't sent"
+    );
+    assert_eq!(message.attachments().count(), 1, "the logo, inline");
+    assert!(message.body_text(0).unwrap().contains("Ada"));
+    // Without a signature div, the HTML stays as it was, and the part still isn't sent.
+    let plain = Draft {
+        html: "<div>Hei</div>".into(),
+        ..draft.clone()
+    };
+    let built = build(&plain, DATE, &slices(&data)).unwrap();
+    assert!(!String::from_utf8_lossy(&built.transmitted).contains("a3232f"));
+    let copy = drafts_copy(&draft, DATE, &slices(&data)).unwrap();
+    assert!(String::from_utf8_lossy(&copy).contains("a3232f"));
+    let read_back = stored::parse(&copy).unwrap();
+    assert!(
+        read_back
+            .parts
+            .iter()
+            .all(|part| part.mime_type != identity::STYLED_SIGNATURE_TYPE)
+    );
+}
+
+#[test]
 fn the_estimate_is_a_little_above_the_size() {
     for (name, draft, data) in samples() {
         let size = build(&draft, DATE, &slices(&data))
@@ -787,70 +897,4 @@ proptest! {
         check(&built.transmitted, Which::Transmitted, &draft, &[]);
         check(&built.sent_copy, Which::Sent, &draft, &[]);
     }
-}
-
-/// An HTML signature with a logo (issue #6), as the app prepares a new draft: the signature
-/// built from its file, its `data:` logo made a part by `data_images`, then sent. The logo goes
-/// as an inline part the HTML shows by `cid:`, and the signature keeps its styles.
-#[test]
-fn an_html_signature_sends_its_logo_inline() {
-    use crate::account::{HtmlSignature, Identity};
-    use crate::compose::{data_images, signature_html};
-    use std::collections::HashMap;
-
-    let logo = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR logo".to_vec();
-    let file = "<table style=\"font-family: Arial\"><tr><td><img src=\"logo.png\" alt=\"Logo\">\
-                </td><td><span style=\"color: #1a5c2e\">Kari Nordmann</span></td></tr></table>";
-    let signature = signature_html::build(
-        file,
-        None,
-        &HashMap::from([("logo.png".into(), logo.clone())]),
-    )
-    .unwrap();
-    let sender = Identity {
-        name: "Kari Nordmann".into(),
-        address: "kari@example.com".into(),
-        signature: Some("Kari".into()),
-        signature_html: Some(HtmlSignature {
-            path: "signatures/kari.html".into(),
-            loaded: Some(Ok(signature)),
-        }),
-    };
-    let mut draft = crate::compose::new_draft(AccountId(1), &sender, ID.into());
-    draft.to = vec![Address::new("Ola Nordmann", "ola@example.org")];
-    draft.subject = "Hei".into();
-    let (html, images) = data_images::extract(&draft.html, || Some("logo1@example.com".into()));
-    assert_eq!(images.len(), 1);
-    draft.html = html;
-    draft.parts = vec![part(
-        "signature.png",
-        "image/png",
-        &logo,
-        Some("logo1@example.com"),
-    )];
-    assert!(
-        draft
-            .html
-            .contains("<img src=\"cid:logo1@example.com\" alt=\"Logo\">")
-    );
-    assert!(
-        draft
-            .html
-            .contains("<span style=\"color: #1a5c2e\">Kari Nordmann</span>")
-    );
-    assert!(!draft.html.contains("data:"));
-
-    let built = build(&draft, DATE, &[logo.as_slice()]).unwrap();
-    let message = MessageParser::default().parse(&built.transmitted).unwrap();
-    let html = message.body_html(0).unwrap();
-    assert!(html.contains("cid:logo1@example.com"));
-    assert!(html.contains("color: #1a5c2e"));
-    let inline = message
-        .parts
-        .iter()
-        .find(|part| part.content_id() == Some("logo1@example.com"))
-        .expect("the logo goes as an inline part");
-    assert_eq!(inline.contents(), logo.as_slice());
-    let text = message.body_text(0).unwrap();
-    assert!(text.contains("Kari Nordmann"));
 }

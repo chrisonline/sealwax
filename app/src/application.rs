@@ -31,6 +31,7 @@ use crate::search;
 use crate::setup::{self, Again, edit::Editable, remove::Removable};
 use crate::shortcuts;
 use crate::status::{self, Waiting};
+use crate::support;
 use crate::theme::{self, ThemeController};
 use crate::triage::{
     self, Controller, Directory, MARK_READ_ON_OPEN, Notice, OpsBackend, Origin, Target,
@@ -42,14 +43,14 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use libadwaita::subclass::prelude::*;
 use sealwax_domain::account::AccountKey;
-use sealwax_domain::actions::{ActionId, Scope};
+use sealwax_ui_model::actions::{ActionId, Scope};
 use sealwax_domain::compose::ReplyKind;
-use sealwax_domain::keymap::Keymap;
-use sealwax_domain::layout::Layout;
+use sealwax_ui_model::keymap::Keymap;
+use sealwax_ui_model::layout::Layout;
 #[cfg(feature = "test-hooks")]
 use sealwax_domain::mailto::Mailto;
 use sealwax_domain::mailto;
-use sealwax_domain::model::{AccountId, FolderId, FolderRole, MessageId};
+use sealwax_domain::model::{AccountId, Folder, FolderId, FolderRole, MessageId};
 use sealwax_domain::senders::GroupBy;
 use sealwax_domain::triage::Triage;
 use sealwax_engine::api::{Command, Event};
@@ -154,6 +155,7 @@ mod imp {
         }
 
         fn shutdown(&self) {
+            crate::unread::clear(&self.state());
             self.state().stop_engine();
             self.state().mailbox.close();
             self.parent_shutdown();
@@ -706,6 +708,29 @@ impl AppState {
         self.app_actions.get()
     }
 
+    /// Whether the window's command `id` applies now.
+    pub(crate) fn set_window_applies(&self, id: ActionId, applies: bool) {
+        if let Some(actions) = self.win_actions.borrow().as_ref() {
+            actions.set_applies(id, applies);
+        }
+    }
+
+    /// The saved searches (1.5.0), as `layout.toml` keeps them.
+    pub(crate) fn saved_searches(&self) -> Vec<sealwax_ui_model::layout::SavedSearch> {
+        self.layout
+            .borrow()
+            .as_ref()
+            .map(|layout| layout.searches.clone())
+            .unwrap_or_default()
+    }
+
+    /// Changes the saved searches through the layout, which is written off the GTK thread; the
+    /// sidebar shows them again.
+    pub(crate) fn change_searches(&self, change: impl FnOnce(&mut Layout)) {
+        self.change_layout(change);
+        crate::saved_searches::show(self);
+    }
+
     /// Whether a command is built and usable now, in either action group, or, for the
     /// composer's commands, in every composer window.
     pub fn is_available(&self, id: ActionId) -> bool {
@@ -769,6 +794,7 @@ impl AppState {
             state.refresh_commands();
             state.update_banner();
         });
+        crate::unread::install(self);
         // The sidebar's account states and the banner follow whatever engine the link has: the
         // one started below, or a self-test's scripted one.
         let weak = Rc::downgrade(self);
@@ -932,6 +958,7 @@ impl AppState {
         if app.windows().is_empty() && self.hidden.borrow().is_none() {
             self.hidden.replace(Some(app.hold()));
             tracing::info!("started without a window");
+            background::ask_desktop(app, self);
         }
         if self.window().is_none() {
             self.start_engine_without_window();
@@ -1017,6 +1044,7 @@ impl AppState {
                 default_handler::run(&window, &state.config.app_id);
             }
         });
+        support::install(self, &app_actions, &self.config.app_id);
         let weak_app = app.downgrade();
         let weak = Rc::downgrade(self);
         prefs.connect_changed(move |update| {
@@ -1160,6 +1188,29 @@ impl AppState {
             }
         });
         let weak = Rc::downgrade(self);
+        win_actions.connect_toggle(
+            ActionId::ToggleReadingPane,
+            !window.reader_hidden(),
+            move |on| {
+                let Some(state) = weak.upgrade() else {
+                    return;
+                };
+                let Some(target) = state.window() else {
+                    return;
+                };
+                let in_reader = target.focus_in_reader();
+                target.set_reader_hidden(!on);
+                // The focus leaves a reader that hides for the list.
+                if in_reader
+                    && !on
+                    && let Some(list) = state.list()
+                {
+                    list.list_view().grab_focus();
+                }
+                state.change_layout(|layout| layout.reader_hidden = !on);
+            },
+        );
+        let weak = Rc::downgrade(self);
         window.connect_sidebar_shown(move |shown| {
             if let Some(state) = weak.upgrade()
                 && let Some(actions) = state.win_actions.borrow().as_ref()
@@ -1204,17 +1255,51 @@ impl AppState {
                 state.edit_account(mailbox::account_for_key(key));
             }
         });
+        let weak = Rc::downgrade(self);
+        window.sidebar().connect_edit_signature(move |key| {
+            if let Some(state) = weak.upgrade() {
+                crate::signature_form::present(&state, Some(key));
+            }
+        });
+        let weak = Rc::downgrade(self);
+        win_actions.connect(ActionId::EditSignature, move || {
+            if let Some(state) = weak.upgrade() {
+                let key = state.list().and_then(|list| {
+                    let selected = list
+                        .selected_targets()
+                        .ok()
+                        .and_then(|targets| targets.first().map(|target| target.folder));
+                    let account = compose_actions::compose_account(
+                        list.scope(),
+                        selected,
+                        &state.mailbox.folders(),
+                    )?;
+                    state
+                        .mailbox
+                        .accounts()
+                        .into_iter()
+                        .find(|known| known.id == account)
+                        .and_then(|known| known.key)
+                });
+                crate::signature_form::present(&state, key.as_ref().map(AccountKey::as_str));
+            }
+        });
         win_actions.set_available(
             ActionId::RemoveAccount,
             !self.removable_accounts().is_empty(),
         );
         win_actions.set_available(ActionId::EditAccount, !self.editable_accounts().is_empty());
+        win_actions.set_available(
+            ActionId::EditSignature,
+            crate::signature_form::applies(self),
+        );
         window.set_menu_model(Some(menu::primary_menu(&keymap).upcast_ref()));
         window.set_keymap(&keymap);
         actions::apply_accels(app, &keymap);
         self.install_list(window, &win_actions, &keymap);
         compose_actions::install(self, window, &win_actions);
         crate::go_to::install(self, &win_actions);
+        crate::saved_searches::install(self, &win_actions);
         crate::folders::install(self, window, &win_actions);
         crate::rules::install_window(self, window, &win_actions);
         crate::unsubscribe::install_window(self, &win_actions);
@@ -1460,6 +1545,19 @@ impl AppState {
                 state.mark_read(list.scope());
             }
         });
+        // Empty Trash follows the folder the list shows, as Mark Folder as Read does. It ships
+        // with no key (ADR-017); a key the user binds fires only where the list shows a `\Trash`,
+        // since `refresh_commands` disables the action everywhere else and a disabled GAction
+        // takes neither an accelerator nor a scoped key. The folder row's menu still reaches it
+        // directly, wherever the list is.
+        let weak = Rc::downgrade(self);
+        actions.connect(ActionId::EmptyTrash, move || {
+            if let Some(state) = weak.upgrade()
+                && let Some(folder) = state.shown_trash()
+            {
+                state.empty_folder(folder);
+            }
+        });
         let weak = Rc::downgrade(self);
         actions.connect(ActionId::Select, move || {
             if let Some(list) = weak.upgrade().and_then(|state| state.list()) {
@@ -1514,6 +1612,20 @@ impl AppState {
                 if let Some(state) = activate.upgrade() {
                     let scope = state.mailbox.scope_for_key(key);
                     state.mark_read(scope);
+                }
+            },
+        );
+        crate::saved_searches::connect(self, window);
+        let (applies, activate) = (Rc::downgrade(self), Rc::downgrade(self));
+        window.sidebar().connect_empty_trash(
+            move |key| {
+                applies
+                    .upgrade()
+                    .is_some_and(|state| state.trash_folder(key).is_some())
+            },
+            move |key| {
+                if let Some(state) = activate.upgrade() {
+                    state.empty_trash(key);
                 }
             },
         );
@@ -1792,6 +1904,60 @@ impl AppState {
         }
     }
 
+    /// The `\Trash` folder of the sidebar row `key`, `None` for every other row — All Inboxes,
+    /// an account's heading, and any folder that isn't one. Each account's own Trash has its own
+    /// row and its own id, so this is always one account's folder, never several.
+    fn trash_folder(&self, key: &str) -> Option<Folder> {
+        let ViewScope::Folder(id) = self.mailbox.scope_for_key(key)? else {
+            return None;
+        };
+        self.mailbox
+            .folder(id)
+            .filter(|folder| folder.role == FolderRole::Trash)
+    }
+
+    /// The `\Trash` the list shows, `None` for anything else — All Inboxes, search results (the
+    /// scope stays the folder while a search in it shows), and any folder that isn't one. The
+    /// list's scope names one folder, so this is always one account's.
+    fn shown_trash(&self) -> Option<Folder> {
+        let list = self.list()?;
+        let ViewScope::Folder(id) = list.scope()? else {
+            return None;
+        };
+        if !list.query().is_empty() {
+            return None;
+        }
+        self.mailbox
+            .folder(id)
+            .filter(|folder| folder.role == FolderRole::Trash)
+    }
+
+    /// Empty Trash: deletes for good every message of the account's `\Trash`, including the mail
+    /// of it below its sync window the store never downloaded, so the folder stays empty when it
+    /// is opened again — and one account's folder only, since every account has a Trash of its own.
+    fn empty_trash(&self, key: &str) {
+        if let Some(folder) = self.trash_folder(key) {
+            self.empty_folder(folder);
+        }
+    }
+
+    /// Empties `folder`, the `\Trash` the user pointed at: its row's menu, or the one the list
+    /// shows (a `keys.toml` key). Names the account and queues the op.
+    fn empty_folder(&self, folder: Folder) {
+        let Some(triage) = self.triage() else {
+            return;
+        };
+        let account = self
+            .mailbox
+            .accounts()
+            .into_iter()
+            .find(|account| account.id == folder.account)
+            .map(|account| account.name)
+            .unwrap_or_else(|| "the account".to_owned());
+        self.mark_started();
+        triage.empty_trash(folder.id, account);
+    }
+
     /// Commands' titles where they differ from the registry's, for the palette.
     fn command_titles(&self) -> Vec<(ActionId, String)> {
         let Some(list) = self.list() else {
@@ -1853,6 +2019,9 @@ impl AppState {
             ActionId::MarkFolderRead,
             list.query().is_empty() && self.unread_in(list.scope()) > 0,
         );
+        // Empty Trash applies only to a `\Trash` the list shows: a user-bound key is disabled
+        // everywhere else, so it can't fire, and the batch page and toolbar say why (ADR-015).
+        actions.set_applies(ActionId::EmptyTrash, self.shown_trash().is_some());
         let undo = self.triage().is_some_and(|triage| triage.can_undo())
             || outbox::can_undo()
             || crate::rules::can_undo();
@@ -1891,8 +2060,39 @@ impl AppState {
                     triage.undo(Some(batch));
                 }
             });
+            // An Undo that dies with the window must not outlive it: libadwaita keeps a hovered
+            // or focused toast up past its own timeout (see `Notice::undo_expires`), and the
+            // store refuses the Undo once the op has run. Retire the button as the window ends;
+            // the toast itself stays readable.
+            if notice.undo_expires {
+                let toast = toast.clone();
+                let weak = Rc::downgrade(self);
+                glib::timeout_add_local_once(notice.shown, move || {
+                    if let Some(state) = weak.upgrade() {
+                        state.retire_toast_button(&toast);
+                    }
+                });
+            }
         }
         self.show_toast(&toast, replaces);
+    }
+
+    /// Hides `toast`'s button once what it offered has run out (an Undo whose window ended),
+    /// while the toast stays to be read: libadwaita keeps a hovered or focused toast up past
+    /// its own timeout. When the button held the keyboard focus (Tab reaches it), GTK would
+    /// move the focus on to the window's first button, so it goes back to the list, whose keys
+    /// (`z` among them) keep working.
+    pub fn retire_toast_button(&self, toast: &adw::Toast) {
+        let focus = self
+            .window()
+            .and_then(|window| gtk4::prelude::GtkWindowExt::focus(window.window()))
+            .filter(|focus| focus.is_mapped());
+        toast.set_button_label(None::<&str>);
+        if focus.is_some_and(|focus| !focus.is_mapped())
+            && let Some(list) = self.list()
+        {
+            list.take_focus();
+        }
     }
 
     /// Shows `toast` in the main window; with `replaces`, it takes the last action's toast's
@@ -2081,11 +2281,21 @@ impl AppState {
                 layout.list_width.map_or(window::LIST_WIDTH, f64::from),
             );
             window.set_sidebar_hidden(layout.sidebar_hidden);
+            self.apply_reader_hidden(&window, layout.reader_hidden);
         }
         if let Some(list) = self.list() {
             list.set_group_by(layout.group_by);
         }
         self.layout.replace(Some(layout));
+        crate::saved_searches::show(self);
+    }
+
+    /// The remembered reading pane on the window, with the menu's check mark.
+    fn apply_reader_hidden(&self, window: &Window, hidden: bool) {
+        window.set_reader_hidden(hidden);
+        if let Some(actions) = self.win_actions.borrow().as_ref() {
+            actions.set_toggle_state(ActionId::ToggleReadingPane, !hidden);
+        }
     }
 
     /// Changes the remembered layout with `change` and writes it off the GTK thread.
@@ -2151,6 +2361,7 @@ impl AppState {
                 layout.list_width.map_or(window::LIST_WIDTH, f64::from),
             );
             window.set_sidebar_hidden(layout.sidebar_hidden);
+            self.apply_reader_hidden(window, layout.reader_hidden);
         }
         if let (Some(list), Some(by)) = (
             self.list(),
@@ -2255,6 +2466,7 @@ impl AppState {
         };
         self.change_layout(|layout| {
             layout.rename_folded(&key, old, new, delimiter);
+            layout.rename_searched(&key, old, new, delimiter);
         });
     }
 
@@ -2266,6 +2478,10 @@ impl AppState {
                 !self.removable_accounts().is_empty(),
             );
             actions.set_available(ActionId::EditAccount, !self.editable_accounts().is_empty());
+            actions.set_available(
+                ActionId::EditSignature,
+                crate::signature_form::applies(self),
+            );
         }
     }
 

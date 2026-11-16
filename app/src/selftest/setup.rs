@@ -43,6 +43,7 @@
 //! | `assert-opened last URL\|none`, `assert-opened count N` | The last link handed to the browser opener, and how many were |
 //! | `assert-toast TEXT` | The toast on screen says TEXT (`setup-dismiss-toasts` clears earlier ones) |
 //! | `assert-clipboard TEXT` | The text Sealwax last put on the clipboard is TEXT |
+//! | `assert-help-opened last URL\|none`, `assert-help-opened count N` | The last link User Guide, Contact Support… or About handed to the browser (ADR-028), and how many |
 //! | `assert-text-contains NAME TEXT` | A label's, a button's or an alert dialog's text (its heading and body) contains TEXT |
 //! | `assert-field NAME TEXT` | A text field's text or a choice's item (never the password's) |
 //! | `assert-account-status ADDRESS synced\|syncing\|offline\|needs-sign-in\|certificate\|quota\|sending-off\|add-again` | The sidebar's state of the account with ADDRESS |
@@ -103,6 +104,7 @@ pub(super) const COMMANDS: &[(&str, usize, usize)] = &[
     ("assert-opened", 2, 2),
     ("assert-toast", 1, 1),
     ("assert-clipboard", 1, 1),
+    ("assert-help-opened", 2, 2),
     ("desktop-network", 1, 1),
     ("desktop-resume", 0, 0),
 ];
@@ -124,6 +126,7 @@ pub(super) fn checks(assertion: &str) -> bool {
             | "assert-opened"
             | "assert-toast"
             | "assert-clipboard"
+            | "assert-help-opened"
     )
 }
 
@@ -494,6 +497,24 @@ pub(super) fn check(harness: &Harness, assertion: &str, args: &[String]) -> Step
                     args[1].as_str(),
                 ),
                 other => Err(format!("assert-opened checks last or count, not {other}")),
+            }
+        }
+        "assert-help-opened" => {
+            let opened = crate::support::opened();
+            match args[0].as_str() {
+                "last" => equal(
+                    "last help link opened",
+                    opened.last().map_or("none", String::as_str),
+                    args[1].as_str(),
+                ),
+                "count" => equal(
+                    "help links opened",
+                    opened.len().to_string().as_str(),
+                    args[1].as_str(),
+                ),
+                other => Err(format!(
+                    "assert-help-opened checks last or count, not {other}"
+                )),
             }
         }
         "assert-clipboard" => {
@@ -1265,9 +1286,10 @@ fn sync_event(harness: &Harness, args: &[String]) -> Result<Option<Event>, Strin
                 "move" => Refused::Move,
                 "expunge" => Refused::Expunge,
                 "folder-read" => Refused::FolderRead,
+                "empty-trash" => Refused::EmptyTrash,
                 other => {
                     return Err(format!(
-                        "use flags, move, expunge or folder-read, not {other}"
+                        "use flags, move, expunge, folder-read or empty-trash, not {other}"
                     ));
                 }
             },
@@ -1415,16 +1437,22 @@ fn protocol_named(name: &str) -> Result<Protocol, String> {
     }
 }
 
-/// The key the fake engine gives an added account: its address's local part.
+/// The key the fake engine gives an added account: its address's local part, lower case, with
+/// `-` for each character a key can't hold (`kari.nordmann` → `kari-nordmann`).
 fn fake_key(settings: &AccountSettings) -> AccountKey {
-    AccountKey(
-        settings
-            .address
-            .split('@')
-            .next()
-            .unwrap_or("account")
-            .to_owned(),
-    )
+    let local: String = settings
+        .address
+        .split('@')
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .map(|c| match c.to_ascii_lowercase() {
+            c @ ('a'..='z' | '0'..='9' | '-' | '_') => c,
+            _ => '-',
+        })
+        .take(sealwax_domain::account::MAX_KEY_LENGTH)
+        .collect();
+    AccountKey::parse(&local).unwrap_or_else(|_| AccountKey::generate([0; 8]))
 }
 
 /// What the engine does on `RemoveAccount`, for the store: the account and its rows go.

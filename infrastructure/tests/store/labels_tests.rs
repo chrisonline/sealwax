@@ -197,7 +197,7 @@ fn copies_in_label_folders_label_the_inbox_rows_and_the_rows_follow() {
 fn server_account(store: &Store) -> AccountId {
     store
         .ensure_account(
-            sealwax_domain::account::AccountKey("labels-test".into()),
+            sealwax_domain::account::AccountKey::parse("labels-test").unwrap(),
             NewAccount {
                 name: "Ada".into(),
                 address: "ada@example.test".into(),

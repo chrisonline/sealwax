@@ -11,12 +11,12 @@
 use crate::engine_link::EngineLink;
 use crate::mailbox::Mailbox;
 use gtk4::glib;
-use sealwax_domain::actions::ActionId;
 use sealwax_domain::model::{Account, AccountId, Flags, Folder, FolderId, FolderRole, MessageId};
 use sealwax_domain::triage::{self, FolderInfo, Plan, Triage, Unavailable};
 use sealwax_engine::api::{Command, Refused};
 pub(crate) use sealwax_infrastructure::store::{BatchId, Lost, NotApplied, Queued, Undone};
 use sealwax_infrastructure::store::{QueueTriage, Reply};
+use sealwax_ui_model::actions::ActionId;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 use std::fmt;
@@ -54,10 +54,10 @@ impl fmt::Display for BackendError {
 
 pub(crate) type Pending<T> = Pin<Box<dyn Future<Output = Result<T, BackendError>>>>;
 
-/// Where actions are queued: the store's op queue (`queue_triage`, `mark_folder_read`, `undo`,
-/// `pending_ops`), or the unit tests' recording one. Each method sends its request before it
-/// returns, so the store takes it in the frame the key was pressed in; the future reports the
-/// outcome.
+/// Where actions are queued: the store's op queue (`queue_triage`, `mark_folder_read`,
+/// `empty_trash`, `undo`, `pending_ops`), or the unit tests' recording one. Each method sends its
+/// request before it returns, so the store takes it in the frame the key was pressed in; the
+/// future reports the outcome.
 pub trait Backend {
     /// Queues `action` on `targets` (they may span folders and accounts); their ops wait for
     /// `not_before`, until which [`Backend::undo`] cancels them.
@@ -65,6 +65,10 @@ pub trait Backend {
 
     /// Marks every message of `folder` read, the server's unread below its floor included.
     fn mark_folder_read(&self, folder: FolderId, not_before: SystemTime) -> Pending<Queued>;
+
+    /// Deletes every message of `folder` for good, the mail of it below a windowed folder's floor
+    /// that the store never downloaded included.
+    fn empty_trash(&self, folder: FolderId, not_before: SystemTime) -> Pending<Queued>;
 
     /// Cancels what of `batch` hasn't run, or queues the inverse.
     fn undo(&self, batch: BatchId) -> Pending<Undone>;
@@ -313,6 +317,19 @@ pub(crate) fn move_choices(
     };
     let sources: BTreeSet<FolderId> = targets.iter().map(|target| target.folder).collect();
     let current = (sources.len() == 1).then(|| *sources.first().expect("one folder"));
+    let mut choices: Vec<Folder> = folders
+        .iter()
+        .filter(|folder| folder.account == account && folder.selectable)
+        .filter(|folder| Some(folder.id) != current)
+        .cloned()
+        .collect();
+    sort_for_picker(&mut choices);
+    Ok(choices)
+}
+
+/// The folder pickers' order (Move to…, Go to Folder…): role folders first, by role, then the
+/// others by name.
+pub(crate) fn sort_for_picker(folders: &mut [Folder]) {
     let order = |role: FolderRole| match role {
         FolderRole::Inbox => 0,
         FolderRole::Archive => 1,
@@ -323,18 +340,11 @@ pub(crate) fn move_choices(
         FolderRole::All => 6,
         FolderRole::Other => 7,
     };
-    let mut choices: Vec<Folder> = folders
-        .iter()
-        .filter(|folder| folder.account == account && folder.selectable)
-        .filter(|folder| Some(folder.id) != current)
-        .cloned()
-        .collect();
-    choices.sort_by(|a, b| {
+    folders.sort_by(|a, b| {
         order(a.role)
             .cmp(&order(b.role))
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
-    Ok(choices)
 }
 
 fn messages(count: u32) -> String {
@@ -439,6 +449,18 @@ pub(crate) fn folder_read_text(queued: u32, name: &str) -> String {
     }
 }
 
+/// Emptying an account's Trash, in the toast's words. It names the account: every account has a
+/// Trash of its own, and the command deletes one account's, never several.
+pub(crate) fn emptied_text(account: &str, count: u32) -> String {
+    match count {
+        0 => format!("{account}'s Trash is already empty"),
+        count => format!(
+            "Emptied {account}'s Trash — {} deleted for good",
+            messages(count)
+        ),
+    }
+}
+
 /// What an Undo did, in the toast's words.
 pub(crate) fn undone_text(undone: &Undone) -> String {
     let lost: Vec<String> = undone
@@ -454,6 +476,9 @@ pub(crate) fn undone_text(undone: &Undone) -> String {
                 ),
                 Lost::Unknown => format!("{n} couldn't be found to bring back"),
                 Lost::ReadBelow => format!("{n} further back on the server stay read"),
+                Lost::ExpungeBelow => {
+                    format!("{n} further back on the server stay deleted for good")
+                }
             }
         })
         .collect();
@@ -498,6 +523,9 @@ pub(crate) fn refused_text(change: Refused, count: u32, account: Option<&str>) -
             format!("the server didn't mark {n} as read; {they} back as {were}")
         }
         Refused::Copy => format!("the server didn't copy {n} where a rule asked"),
+        Refused::EmptyTrash => {
+            format!("the server didn't delete {n} further back in the Trash; {they} still there")
+        }
     };
     match account {
         Some(name) => format!("{name}: {text}"),
@@ -519,6 +547,15 @@ pub struct Notice {
     pub text: String,
     /// The toast's Undo undoes this batch, while it is the last action.
     pub undo: Option<BatchId>,
+    /// Whether the toast's Undo dies with the undo window: true for a notice whose op deletes
+    /// the mail for good — Empty Trash, and Delete in the Trash (or where an account has no
+    /// Trash). Once the window has passed the op has run, and on a server with UIDPLUS the
+    /// store can't bring the mail back, so a toast that outlives the window — libadwaita keeps
+    /// a hovered or focused toast up past its own timeout — must stop offering Undo. False for
+    /// a move or a flag change, whose completed op the store reverses, so their Undo still
+    /// works after the window. (A server without UIDPLUS only flags the message `\Deleted`, so
+    /// its Undo would still work then; the window is the contract either way.)
+    pub undo_expires: bool,
     /// How long the toast shows.
     pub shown: Duration,
 }
@@ -529,6 +566,7 @@ impl Notice {
         Self {
             text,
             undo: None,
+            undo_expires: false,
             shown: Duration::from_secs(4),
         }
     }
@@ -799,9 +837,13 @@ impl Controller {
         if let Some(batch) = undo {
             self.set_last(Some(batch));
         }
+        // Plans that delete for good have an Undo that dies with the window (see
+        // `Notice::undo_expires`); a local delete ran at once and has none to retire.
+        let deletes_for_good = !plans.is_empty() && plans.iter().all(|plan| *plan == Plan::Expunge);
         Some(Notice {
             text: done_text(action, &queued, &plans, &folders),
             undo,
+            undo_expires: undo.is_some() && deletes_for_good,
             shown: self.window(),
         })
     }
@@ -862,6 +904,43 @@ impl Controller {
             this.notify(&Notice {
                 text: folder_read_text(applied, &name),
                 undo: batch,
+                undo_expires: false,
+                shown: this.window(),
+            });
+        });
+    }
+
+    /// Empties `folder`, one account's `\Trash`, for good: its every message, the mail the store
+    /// never downloaded below its sync window included, so the folder is still empty when it is
+    /// opened again. `account` names it in the toast, since every account has a Trash of its own.
+    /// Undo stands only inside the undo window: once the op has run, the server's copies are gone.
+    pub fn empty_trash(&self, folder: FolderId, account: String) {
+        let this = self.clone();
+        let not_before = SystemTime::now() + self.window();
+        let pending = self.inner.backend.empty_trash(folder, not_before);
+        self.inner.queued.set(self.inner.queued.get() + 1);
+        self.spawn(async move {
+            let queued = match pending.await {
+                Ok(queued) => queued,
+                Err(error) => {
+                    tracing::warn!("a Trash wasn't emptied: {error}");
+                    this.answered();
+                    this.notify(&Notice::plain(
+                        "The change couldn't be saved in the mail store".into(),
+                    ));
+                    return;
+                }
+            };
+            this.answered();
+            this.wake(&queued.accounts);
+            let batch = queued.batch.filter(|_| queued.applied > 0);
+            if let Some(batch) = batch {
+                this.set_last(Some(batch));
+            }
+            this.notify(&Notice {
+                text: emptied_text(&account, queued.applied),
+                undo: batch,
+                undo_expires: true,
                 shown: this.window(),
             });
         });
@@ -920,6 +999,7 @@ impl Controller {
         Notice {
             text: refused_text(change, count, name),
             undo: None,
+            undo_expires: false,
             shown: Duration::from_secs(10),
         }
     }
@@ -1005,6 +1085,15 @@ impl Backend for OpsBackend {
         )
     }
 
+    fn empty_trash(&self, folder: FolderId, not_before: SystemTime) -> Pending<Queued> {
+        let not_before = unix_ms(not_before);
+        answer(
+            self.mailbox
+                .store()
+                .map(|store| store.empty_trash(folder, not_before)),
+        )
+    }
+
     fn undo(&self, batch: BatchId) -> Pending<Undone> {
         answer(self.mailbox.store().map(|store| store.undo(batch)))
     }
@@ -1066,7 +1155,7 @@ mod tests {
                 id: AccountId(2),
                 name: "Work".into(),
                 address: "work@example.test".into(),
-                key: Some(AccountKey("work".into())),
+                key: Some(AccountKey::parse("work").unwrap()),
             },
         ]
     }
@@ -1252,6 +1341,18 @@ mod tests {
             "Marked 12 messages in Inbox as read"
         );
         assert_eq!(folder_read_text(0, "Inbox"), "Nothing in Inbox was unread");
+        assert_eq!(
+            emptied_text("Ada Berg", 12),
+            "Emptied Ada Berg's Trash — 12 messages deleted for good"
+        );
+        assert_eq!(
+            emptied_text("Ada Berg", 1),
+            "Emptied Ada Berg's Trash — 1 message deleted for good"
+        );
+        assert_eq!(
+            emptied_text("Ada Berg", 0),
+            "Ada Berg's Trash is already empty"
+        );
     }
 
     #[test]
@@ -1282,6 +1383,10 @@ mod tests {
              server stay read"
         );
         assert_eq!(
+            undone_text(&undone(2, 0, &[(Lost::ExpungeBelow, 40)])),
+            "Undone. 40 messages further back on the server stay deleted for good"
+        );
+        assert_eq!(
             refused_text(Refused::Move, 3, None),
             "The server didn't move 3 messages; they're back where they were"
         );
@@ -1296,6 +1401,14 @@ mod tests {
         assert_eq!(
             refused_text(Refused::FolderRead, 12, None),
             "The server didn't mark 12 messages as read; they're back as they were"
+        );
+        assert_eq!(
+            refused_text(Refused::EmptyTrash, 400, None),
+            "The server didn't delete 400 messages further back in the Trash; they're still there"
+        );
+        assert_eq!(
+            refused_text(Refused::EmptyTrash, 1, Some("Work")),
+            "Work: the server didn't delete 1 message further back in the Trash; it's still there"
         );
     }
 
@@ -1354,6 +1467,15 @@ mod tests {
             self.calls
                 .borrow_mut()
                 .push(format!("read {} waits {waits}", folder.0));
+            let queued = self.batch(2, [folder]);
+            Box::pin(async move { Ok(queued) })
+        }
+
+        fn empty_trash(&self, folder: FolderId, not_before: SystemTime) -> Pending<Queued> {
+            let waits = not_before > SystemTime::now() + Duration::from_secs(1);
+            self.calls
+                .borrow_mut()
+                .push(format!("empty {} waits {waits}", folder.0));
             let queued = self.batch(2, [folder]);
             Box::pin(async move { Ok(queued) })
         }
@@ -1531,6 +1653,7 @@ mod tests {
                     .expect("a toast");
                 assert_eq!(notice.text, "Deleted 2 messages for good");
                 assert_eq!(notice.undo, None);
+                assert!(!notice.undo_expires, "no Undo to retire");
                 assert!(!controller.can_undo());
                 // On a server it waits for the window, and the store says what Undo brought
                 // back.
@@ -1543,6 +1666,10 @@ mod tests {
                     .expect("a toast");
                 assert_eq!(notice.text, "Deleted 1 message for good");
                 assert_eq!(notice.undo, Some(BatchId(4)));
+                assert!(
+                    notice.undo_expires,
+                    "a delete for good's Undo dies with the window"
+                );
                 assert_eq!(
                     backend.calls.borrow().last().unwrap(),
                     "Delete x1 waits true"
@@ -1579,6 +1706,10 @@ mod tests {
                     "Moved 1 message to Junk. Mail from kari@example.test goes to Junk from now on"
                 );
                 assert!(notice.undo.is_some());
+                assert!(
+                    !notice.undo_expires,
+                    "a move's Undo still works after the window"
+                );
                 controller.undo(None);
                 drain(&context);
                 assert_eq!(
@@ -1663,6 +1794,43 @@ mod tests {
                         "read 1 waits true",
                         "read 11 waits true"
                     ]
+                );
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn emptying_a_trash_names_the_account_and_offers_undo() {
+        let context = glib::MainContext::new();
+        context
+            .with_thread_default(|| {
+                let (controller, backend, engine, _events) = controller();
+                let notices: Rc<RefCell<Vec<Notice>>> = Rc::default();
+                let record = notices.clone();
+                controller.connect_notice(move |notice| record.borrow_mut().push(notice.clone()));
+                // Folder 4 is account 1's Trash, and account 1 has no key: nothing to wake.
+                controller.empty_trash(FolderId(4), "Ada Berg".into());
+                drain(&context);
+                let last = notices.borrow().last().cloned().unwrap();
+                assert_eq!(
+                    last.text,
+                    "Emptied Ada Berg's Trash — 2 messages deleted for good"
+                );
+                assert!(last.undo.is_some(), "the undo window is open");
+                assert!(last.undo_expires, "its Undo dies with the undo window");
+                assert_eq!(woken(&engine), Vec::<i64>::new());
+                // Folder 13 is a server account's Trash: its ops wake that account.
+                controller.empty_trash(FolderId(13), "Work".into());
+                drain(&context);
+                let last = notices.borrow().last().cloned().unwrap();
+                assert_eq!(
+                    last.text,
+                    "Emptied Work's Trash — 2 messages deleted for good"
+                );
+                assert_eq!(woken(&engine), [2]);
+                assert_eq!(
+                    *backend.calls.borrow(),
+                    ["empty 4 waits true", "empty 13 waits true"]
                 );
             })
             .unwrap();

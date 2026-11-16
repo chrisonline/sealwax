@@ -11,24 +11,25 @@
 
 use super::ComposeRequest;
 use super::backend::{Backend, Local, Prepared, Refusal, Sender, Suggestion};
+use super::editor::InlineImage;
 use crate::application::AppState;
 use crate::engine_link::EngineLink;
 use crate::mailbox;
 use gtk4::{gio, glib};
+use sealwax_domain::address::is_sendable;
+use sealwax_domain::attachment::eml_file_name;
 use sealwax_domain::account::{AccountSettings, Identity};
 use sealwax_domain::compose::reply::{self, Original};
-use sealwax_domain::compose::{
-    self, Draft, DraftPart, ReplyKind, data_images, identity, ids, mime, stored,
-};
+use sealwax_domain::compose::{self, Draft, DraftPart, ReplyKind, identity, ids, mime, stored};
 use sealwax_domain::model::{Account, AccountId, Address, DraftId, MessageId};
 use sealwax_engine::api::{Command, Event};
 use sealwax_infrastructure::blobs::BlobStore;
+use sealwax_infrastructure::signatures;
 use sealwax_infrastructure::store::{
     BodyState, DraftSaved, SaveDraft, SendQueued, Store, StoredDraft,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::time::Duration;
@@ -82,6 +83,16 @@ pub(crate) fn senders(account: &Account, settings: &[AccountSettings]) -> Vec<Id
     }
 }
 
+/// The senders the From chip offers: other accounts' addresses that Sealwax can't send from
+/// are left out (ADR-007, no SMTPUTF8); the draft's own account's stay, so its From is always
+/// there, and Send says why it can't go.
+fn offered(chips: Vec<Sender>, own: AccountId) -> Vec<Sender> {
+    chips
+        .into_iter()
+        .filter(|chip| chip.account == own || is_sendable(&chip.address.email))
+        .collect()
+}
+
 fn chips(account: AccountId, senders: &[Identity]) -> Vec<Sender> {
     senders
         .iter()
@@ -89,7 +100,8 @@ fn chips(account: AccountId, senders: &[Identity]) -> Vec<Sender> {
             account,
             label: identity.name.clone(),
             address: identity::from_address(identity),
-            signature: identity::signature_of(identity),
+            signature: identity.signature.clone(),
+            signature_html: identity.signature_html.clone(),
         })
         .collect()
 }
@@ -181,90 +193,20 @@ impl Context {
         senders(account, &self.settings)
     }
 
-    /// Reads the HTML signatures `accounts.toml` names (issue #6), off the GTK thread, each
-    /// time a message is started, so a changed file applies to the next one.
-    async fn read_signatures(&mut self, config_dir: PathBuf) {
-        if !self.settings.iter().any(|account| {
-            account.signature_html.is_some()
-                || account
-                    .identities
-                    .iter()
-                    .any(|identity| identity.signature_html.is_some())
-        }) {
-            return;
-        }
-        let mut settings = self.settings.clone();
-        if let Ok(read) = gio::spawn_blocking(move || {
-            sealwax_infrastructure::signatures::load_all(&config_dir, &mut settings);
-            settings
-        })
-        .await
-        {
-            self.settings = read;
-        }
-    }
-
-    /// Why an HTML signature of `account`'s senders can't be used, each once.
-    fn signature_notices(&self, account: &Account) -> Vec<String> {
-        let mut notices: Vec<String> = Vec::new();
-        for sender in self.senders(account) {
-            if let Some(Some(Err(why))) = sender.signature_html.map(|html| html.loaded)
-                && !notices.contains(&why)
-            {
-                notices.push(why);
-            }
-        }
-        notices
-    }
-
-    /// The draft's `data:` images (an HTML signature's) as parts in the blob store, shown by
-    /// `cid:` (issue #6), so a draft sent without the composer sends them as the composer does.
-    async fn inline_images(&self, draft: &mut Draft) {
-        if !draft.html.contains("src=\"data:image/") {
-            return;
-        }
-        let Ok(blobs) = self.blobs() else {
-            return;
-        };
-        let html = draft.html.clone();
-        let sender = draft.from.email.clone();
-        let stored = gio::spawn_blocking(move || {
-            let (html, images) = data_images::extract(&html, || ids::content_id(&sender, random()));
-            let parts = images
-                .into_iter()
-                .map(|image| {
-                    let blob = blobs.put(&image.data).ok()?;
-                    let extension = image.mime_type.trim_start_matches("image/");
-                    Some(DraftPart {
-                        name: format!("signature.{extension}"),
-                        mime_type: image.mime_type,
-                        size: image.data.len() as u64,
-                        blob,
-                        content_id: Some(image.content_id),
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some((html, parts))
-        })
-        .await;
-        if let Ok(Some((html, parts))) = stored {
-            draft.html = html;
-            draft.parts.extend(parts);
-        }
-    }
-
     /// Who a draft of `account` can be sent as: every account that sends, in the sidebar's
     /// order, each its own address then its identities (issue #7). An account no settings file
-    /// lists has no server, so it sends nothing, unless it is the draft's own.
+    /// lists has no server, so it sends nothing, unless it is the draft's own; see [`offered`]
+    /// for addresses Sealwax can't send from.
     fn all_senders(&self, account: &Account) -> Result<Vec<Sender>, String> {
-        Ok(self
+        let chips = self
             .state()?
             .mailbox()
             .accounts()
             .iter()
             .filter(|known| known.key.is_some() || known.id == account.id)
             .flat_map(|known| chips(known.id, &self.senders(known)))
-            .collect())
+            .collect();
+        Ok(offered(chips, account.id))
     }
 
     /// The account a stored message belongs to.
@@ -306,10 +248,11 @@ impl Context {
 
     /// The raw message `message` as the server has it: from the blob store, after the engine
     /// downloads its body if the store has none, or whole from the server when the store
-    /// keeps only its text parts, unless `text_will_do` (a reply, which needs no attachments,
-    /// gets its inline images one by one: [`Self::fetch_parts`]). `None` with why it couldn't
-    /// be had.
-    async fn original(&self, message: MessageId, text_will_do: bool) -> Result<Vec<u8>, String> {
+    /// keeps only its text parts, unless `want` is [`Want::Text`] (a reply, which needs no
+    /// attachments, gets its inline images one by one: [`Self::fetch_parts`]). Offline, a
+    /// message stored as its text parts is that copy, except for [`Want::Exact`]. `None` with
+    /// why it couldn't be had.
+    async fn original(&self, message: MessageId, want: Want) -> Result<Vec<u8>, String> {
         let store = self.store()?;
         let target = store
             .body_targets(vec![message])
@@ -321,7 +264,7 @@ impl Context {
         let engine = self.state()?.engine();
         match target.body_state {
             BodyState::Full => {}
-            BodyState::Text if text_will_do => {}
+            BodyState::Text if want == Want::Text => {}
             BodyState::Text => {
                 let fetched = ask(
                     &engine,
@@ -338,6 +281,13 @@ impl Context {
                 .await;
                 if let Some(Ok(original)) = fetched {
                     return Ok(original.0);
+                }
+                if want == Want::Exact {
+                    return Err(
+                        "The original message couldn't be downloaded. Try again when Sealwax is \
+                         online."
+                            .to_owned(),
+                    );
                 }
                 // Without the server, the stored text parts still make the quote; the parts
                 // left empty are dropped from the draft.
@@ -478,12 +428,13 @@ fn title(kind: ReplyKind) -> &'static str {
     }
 }
 
-async fn prepare(mut context: Context, request: ComposeRequest) -> Result<Prepared, String> {
+async fn prepare(context: Context, request: ComposeRequest) -> Result<Prepared, String> {
+    let fresh = !matches!(
+        request,
+        ComposeRequest::Draft(_) | ComposeRequest::ServerDraft(_)
+    );
     let state = context.state()?;
     state.mailbox().wait_ready().await;
-    context
-        .read_signatures(state.config().dirs.config.clone())
-        .await;
     let (account, draft, title, id) = match request {
         ComposeRequest::New { account } => {
             let account = context.account(account)?;
@@ -513,6 +464,12 @@ async fn prepare(mut context: Context, request: ComposeRequest) -> Result<Prepar
             let draft = answer(&context, &account, message, kind, &typed).await?;
             (account, draft, title(kind).to_owned(), None)
         }
+        ComposeRequest::ForwardAsAttachment(messages) => {
+            let first = *messages.first().ok_or_else(|| "No message to forward.".to_owned())?;
+            let account = context.account_of(first).await?;
+            let draft = forward_as_attachment(&context, &account, &messages).await?;
+            (account, draft, "Forward".to_owned(), None)
+        }
         ComposeRequest::Draft(id) => {
             let stored = stored_draft(&context, id).await?;
             let account = context.account(Some(stored.draft.account))?;
@@ -539,26 +496,21 @@ async fn prepare(mut context: Context, request: ComposeRequest) -> Result<Prepar
             }
         }
     };
-    let mut draft = draft;
     let id = match id {
         Some(id) => {
             let store = context.store()?;
             let _ = store.set_draft_open(id, true).recv().await;
             id
         }
-        None => {
-            context.inline_images(&mut draft).await;
-            context.create(draft.clone()).await?
-        }
+        None => context.create(draft.clone()).await?,
     };
     let senders = context.all_senders(&account)?;
-    let notices = context.signature_notices(&account);
     Ok(Prepared {
         id,
         draft,
         senders,
         title,
-        notices,
+        fresh,
     })
 }
 
@@ -586,9 +538,11 @@ async fn answer(
     kind: ReplyKind,
     typed: &str,
 ) -> Result<Draft, String> {
-    let raw = context
-        .original(message, kind != ReplyKind::Forward)
-        .await?;
+    let want = match kind {
+        ReplyKind::Forward => Want::Whole,
+        ReplyKind::Reply | ReplyKind::ReplyAll => Want::Text,
+    };
+    let raw = context.original(message, want).await?;
     let blobs = context.blobs()?;
     let senders = context.senders(account);
     let worker = blobs.clone();
@@ -627,13 +581,64 @@ async fn answer(
     Ok(planned.draft(account.id, message, id, typed, parts))
 }
 
+/// A new message from `account` with each of `messages` attached whole as a `message/rfc822`
+/// part named after its subject; the subject is the first's with "Fwd:", and how many more.
+/// Only the server's original is attached, never the copy kept as its text parts.
+async fn forward_as_attachment(
+    context: &Context,
+    account: &Account,
+    messages: &[MessageId],
+) -> Result<Draft, String> {
+    let blobs = context.blobs()?;
+    let mut parts = Vec::with_capacity(messages.len());
+    let mut first_subject = None;
+    for &message in messages {
+        let raw = context.original(message, Want::Exact).await?;
+        let worker = blobs.clone();
+        let stored = gio::spawn_blocking(move || {
+            let subject = Original::parse(&raw).headers.subject;
+            let blob = worker.put(&raw).ok()?;
+            Some((subject, blob, raw.len() as u64))
+        })
+        .await
+        .ok()
+        .flatten()
+        .ok_or_else(|| "The message couldn't be attached.".to_owned())?;
+        let (subject, blob, size) = stored;
+        parts.push(DraftPart {
+            name: eml_file_name(&subject),
+            mime_type: "message/rfc822".to_owned(),
+            size,
+            blob,
+            content_id: None,
+        });
+        first_subject.get_or_insert(subject);
+    }
+    let sender = context.senders(account).remove(0);
+    let mut draft = compose::new_draft(account.id, &sender, message_id(&sender.address));
+    draft.subject = reply::forward_subjects(first_subject.as_deref().unwrap_or(""), parts.len());
+    draft.parts = parts;
+    Ok(draft)
+}
+
+/// What [`Context::original`] has to give.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Want {
+    /// The text parts will do: a reply.
+    Text,
+    /// The whole message, or offline the copy kept as its text parts: a forward.
+    Whole,
+    /// The server's original, nothing else: Forward as Attachment.
+    Exact,
+}
+
 /// A Drafts-folder message written elsewhere, as a new local draft.
 async fn server_draft(
     context: &Context,
     account: &Account,
     message: MessageId,
 ) -> Result<Draft, String> {
-    let raw = context.original(message, false).await?;
+    let raw = context.original(message, Want::Whole).await?;
     let blobs = context.blobs()?;
     let parsed = gio::spawn_blocking(move || {
         let stored = stored::parse(&raw)?;
@@ -923,5 +928,97 @@ impl Backend for StoreBackend {
         self.state
             .upgrade()
             .and_then(|state| state.mailbox().blobs())
+    }
+
+    fn html_signature(
+        &self,
+        path: String,
+        domain: String,
+    ) -> Local<Result<super::backend::HtmlSignature, String>> {
+        let config = self
+            .state
+            .upgrade()
+            .map(|state| state.config().dirs.config.clone());
+        let blobs = self.blobs();
+        Box::pin(async move {
+            let (Some(config), Some(blobs)) = (config, blobs) else {
+                return Err("the mail store isn't open yet".to_owned());
+            };
+            gio::spawn_blocking(move || {
+                let loaded = signatures::load(&signatures::dir(&config), &path, &domain)
+                    .map_err(|error| error.to_string())?;
+                let mut images = Vec::with_capacity(loaded.images.len());
+                for image in loaded.images {
+                    let blob = blobs
+                        .put(&image.data)
+                        .map_err(|_| "its images couldn't be stored".to_owned())?;
+                    images.push((
+                        image.content_id,
+                        InlineImage {
+                            mime_type: image.mime_type.to_owned(),
+                            blob,
+                            size: image.data.len() as u64,
+                            name: image.name,
+                        },
+                    ));
+                }
+                let styled = match loaded.styled {
+                    Some(styled) => {
+                        let blob = blobs
+                            .put(styled.as_bytes())
+                            .map_err(|_| "it couldn't be stored".to_owned())?;
+                        let part = DraftPart {
+                            name: "signature.html".to_owned(),
+                            mime_type: identity::STYLED_SIGNATURE_TYPE.to_owned(),
+                            size: styled.len() as u64,
+                            blob,
+                            content_id: None,
+                        };
+                        Some((styled, part))
+                    }
+                    None => None,
+                };
+                Ok(super::backend::HtmlSignature {
+                    block: loaded.block,
+                    images,
+                    styled,
+                })
+            })
+            .await
+            .map_err(|_| "the file couldn't be read".to_owned())?
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sender(account: i64, email: &str) -> Sender {
+        Sender {
+            account: AccountId(account),
+            label: String::new(),
+            address: Address::new("", email),
+            signature: None,
+            signature_html: None,
+        }
+    }
+
+    #[test]
+    fn other_accounts_addresses_that_cant_be_sent_from_are_not_offered() {
+        let chips = vec![
+            sender(1, "jörg@example.test"),
+            sender(1, "kari@example.test"),
+            sender(2, "åse@example.test"),
+            sender(2, "ola@example.test"),
+        ];
+        let offered: Vec<String> = offered(chips, AccountId(1))
+            .into_iter()
+            .map(|chip| chip.address.email)
+            .collect();
+        assert_eq!(
+            offered,
+            ["jörg@example.test", "kari@example.test", "ola@example.test"]
+        );
     }
 }

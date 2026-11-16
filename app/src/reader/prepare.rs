@@ -2,15 +2,15 @@
 //! its style, remote-image flag and inline parts, plain text with format=flowed joined, or why
 //! it can't be shown), the attachment cards, and whether it is signed (ML-064).
 
-use super::engine::{InlinePart, InlineParts, percent_decode};
+use super::engine::{InlinePart, InlineParts};
 use super::protection::Unreadable;
 use gtk4::glib;
 use sealwax_domain::flowed::{self, Flowed};
 use sealwax_domain::html_scan;
 use sealwax_domain::message;
 use sealwax_domain::model::{Attachment, MessageDetail, MessageId};
-use sealwax_domain::reading::{self, Encryption, InlinePgp, Signature};
-use sealwax_domain::theme::BodyStyle;
+use sealwax_domain::reading::{self, Encryption, InlinePgp, SignatureKind};
+use sealwax_ui_model::theme::BodyStyle;
 use std::collections::HashSet;
 
 /// A message references at most this many inline parts; more are left out.
@@ -43,7 +43,7 @@ pub(super) struct Prepared {
     /// signatures and PGP/MIME's version part.
     pub attachments: Vec<Attachment>,
     /// How the message is signed; the signature isn't checked.
-    pub signed: Option<Signature>,
+    pub signed: Option<SignatureKind>,
 }
 
 pub(super) fn prepare(detail: &MessageDetail, raw: Option<&[u8]>) -> Prepared {
@@ -67,7 +67,7 @@ pub(super) fn prepare(detail: &MessageDetail, raw: Option<&[u8]>) -> Prepared {
         .collect();
     let unreadable = match (inspection.encrypted, inspection.signed) {
         (Some(encryption), _) => Some(Unreadable::Encrypted(encryption)),
-        (None, Some(Signature::SmimeOpaque))
+        (None, Some(SignatureKind::SmimeOpaque))
             if detail.html_parts.is_empty() && detail.text_parts.is_empty() =>
         {
             Some(Unreadable::SignedOpaque)
@@ -127,7 +127,7 @@ pub(super) fn prepare(detail: &MessageDetail, raw: Option<&[u8]>) -> Prepared {
         ),
         Some(InlinePgp::Signed(text)) => (
             Body::Plain(text),
-            inspection.signed.or(Some(Signature::InlinePgp)),
+            inspection.signed.or(Some(SignatureKind::InlinePgp)),
         ),
         None => (Body::Plain(text), inspection.signed),
     };
@@ -169,7 +169,7 @@ pub(super) fn cid_references(html: &str) -> HashSet<String> {
             let end = rest
                 .find(|c: char| c.is_whitespace() || "\"'()<>,;\\".contains(c))
                 .unwrap_or(rest.len());
-            percent_decode(&rest[..end]).to_ascii_lowercase()
+            sealwax_domain::percent::decode(&rest[..end]).to_ascii_lowercase()
         })
         .filter(|id| !id.is_empty())
         .collect()
@@ -395,7 +395,7 @@ mod tests {
         let prepared = prepare(&detail(&signed), Some(&signed));
         assert!(matches!(&prepared.body, Body::Plain(text) if text.trim() == "The minutes."));
         assert!(prepared.attachments.is_empty());
-        assert_eq!(prepared.signed, Some(Signature::PgpMime));
+        assert_eq!(prepared.signed, Some(SignatureKind::PgpMime));
         let clear = raw(
             "From: Ada <ada@example.com>\nSubject: x\nContent-Type: text/plain\n\n\
             -----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA256\n\nMeeting moved.\n\
@@ -403,7 +403,7 @@ mod tests {
         );
         let prepared = prepare(&detail(&clear), Some(&clear));
         assert!(matches!(&prepared.body, Body::Plain(text) if text == "Meeting moved."));
-        assert_eq!(prepared.signed, Some(Signature::InlinePgp));
+        assert_eq!(prepared.signed, Some(SignatureKind::InlinePgp));
     }
 
     #[cfg(feature = "test-hooks")]

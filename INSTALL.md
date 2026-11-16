@@ -2,7 +2,7 @@
 
 Synced: 2026-10-18
 
-Sealwax is an email app for [Omarchy](https://omarchy.org). This page shows how to install it, keep it up to date and remove it again. You don't need to know anything about programming: follow the steps in order.
+Sealwax is an email app for [Omarchy](https://omarchy.org), and it also runs on other Linux systems as a Flatpak ([below](#on-other-linux-systems-flatpak)). This page shows how to install it, keep it up to date and remove it again. You don't need to know anything about programming: follow the steps in order.
 
 - [Before you start](#before-you-start)
 - [Install Sealwax](#install-sealwax)
@@ -47,6 +47,20 @@ When it's done, the terminal shows the prompt again, and you can close it.
 2. Under the newest release, open **Assets** and click the file whose name starts with `sealwax-` and ends with `-x86_64.pkg.tar.zst`. Your browser saves it in your Downloads folder.
 3. In a terminal, type `sudo pacman -U ~/Downloads/` and the file's name (press **Tab** after typing `~/Downloads/sealwax` to have the rest filled in), then press **Enter**.
 
+### On other Linux systems: Flatpak
+
+On Fedora, Ubuntu, Linux Mint, Pop!_OS, Debian and other Linux systems, install Sealwax as a Flatpak from Sealwax's own Flatpak repository. Your system needs Flatpak; many have it already, and [flatpak.org](https://flatpak.org/setup/) shows how to add it. Then run this in a terminal:
+
+```sh
+flatpak install --user https://github.com/PixDevsApps/sealwax/releases/latest/download/io.github.pixdevsapps.Sealwax.flatpakref
+```
+
+Answer **y** when it asks. The first time, it also downloads the GNOME runtime Sealwax runs on, from Flathub; that takes a few minutes. Then start Sealwax from your app menu, or with `flatpak run io.github.pixdevsapps.Sealwax`.
+
+Sealwax isn't on Flathub, so it doesn't show up when you search in GNOME Software or KDE Discover until you have installed it this way. Once installed, its updates show up there.
+
+In the Flatpak, Sealwax follows your system's light or dark style. On Omarchy, use the package above instead: the Flatpak can't use Omarchy's font, and Start at Login doesn't work there. Install only one of the two: they keep separate settings and mail.
+
 ### Community packages
 
 Other people package Sealwax for other systems. The project doesn't maintain or check these:
@@ -59,13 +73,17 @@ Other people package Sealwax for other systems. The project doesn't maintain or 
 2. Click **Add an account** and type your email address. Sealwax finds your mail provider's settings by itself.
 3. Type your email password, or click **Sign in with Microsoft** for Outlook.com, Hotmail and Microsoft 365 addresses. For Gmail, you need an app password from Google first: [GMAIL.md](docs/GMAIL.md) shows how, with pictures.
 
-The [user guide](docs/USER_GUIDE.md) explains everything else, from reading and writing mail to rules and keyboard shortcuts. A copy comes with Sealwax, in `/usr/share/doc/sealwax/USER_GUIDE.md`.
+The [user guide](docs/USER_GUIDE.md) explains everything else, from reading and writing mail to rules and keyboard shortcuts. A copy comes with Sealwax, in `/usr/share/doc/sealwax/USER_GUIDE.md`, and it is online at [pixdevs.com/guides/sealwax](https://pixdevs.com/guides/sealwax/) (**Help → User Guide** in Sealwax's main menu).
+
+**Stuck?** Write to **support@pixdevs.com**. **Help → Contact Support…** in Sealwax's main menu shows the address with a few lines about your Sealwax to copy into your message (its version, how it was installed, your system; nothing about your mail), and with an account added it starts the message for you. The setup assistant offers the same when an account can't be added.
 
 ## Updates
 
 **To see whether there is a new version,** open Sealwax's main menu (the button with three lines, ☰, at the top of the message list) and choose **Check for Updates…**. Sealwax asks GitHub and says "You have the latest version", or shows the command that installs the new one: click **Copy Command**, paste it into a terminal (see [how](#before-you-start)) and press **Enter**.
 
 **To update, run the [install command](#with-one-command-easiest) again.** It always fetches the newest Sealwax and installs it over the one you have. Sealwax doesn't update by itself.
+
+**The Flatpak** updates with your other Flatpak apps: `flatpak update` in a terminal, or your software centre's updates page. Check for Updates… isn't in its menu.
 
 **After an update, restart Sealwax:** click its window and press **Ctrl + Q**, then start it again. Closing the window isn't enough, because Sealwax keeps running in the background to check for new mail.
 
@@ -96,6 +114,8 @@ This deletes the passwords Sealwax saved and the copy of your mail on this compu
 sudo pacman -R sealwax
 ```
 
+**The Flatpak:** `flatpak uninstall --delete-data io.github.pixdevsapps.Sealwax` removes it with its settings and its copy of your mail. Leave out `--delete-data` to keep them. `flatpak remote-delete sealwax` then removes Sealwax's repository from your list.
+
 ### 3. Delete Sealwax's leftover files (optional)
 
 Removing the app leaves your Sealwax settings and its copy of your mail on the computer, in case you install it again. To delete them too, run:
@@ -115,7 +135,7 @@ This deletes only Sealwax's own files on this computer, never the mail on your p
 
 ## For developers: build from source
 
-**What you need:** Arch Linux on x86_64, or on aarch64, where building from source is allowed but hasn't been tested; `git`, Python 3.11 or later, `base-devel` (makepkg), `pkgconf`, and Rust 1.92 or later with Cargo (Arch's `rust` package, or rustup). At runtime, pacman installs `gtk4` 4.18 or later, `libadwaita` 1.9 or later, `webkitgtk-6.0` 2.52 or later, `sqlite` 3.43 or later, `glib2`, `gcc-libs` and `glibc`. Optional: a Secret Service such as `gnome-keyring` for passwords and tokens (without one, Sealwax keeps them in memory until it quits, and says so); `hunspell` and a dictionary such as `hunspell-en_us` for spell checking (the dictionary alone isn't enough).
+**What you need:** Arch Linux on x86_64, or on aarch64, where building from source is allowed but hasn't been tested; `git`, Python 3.11 or later, `base-devel` (makepkg), `pkgconf`, and Rust 1.92 or later with Cargo (Arch's `rust` package, or rustup). At runtime, pacman installs `gtk4` 4.18 or later, `libadwaita` 1.9 or later, `webkitgtk-6.0` 2.52 or later, `sqlite` 3.45.3 or later, `glib2`, `gcc-libs` and `glibc`. Optional: a Secret Service such as `gnome-keyring` for passwords and tokens (without one, Sealwax keeps them in memory until it quits, and says so); `hunspell` and a dictionary such as `hunspell-en_us` for spell checking (the dictionary alone isn't enough).
 
 **Build and install the Arch package:**
 

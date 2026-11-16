@@ -69,13 +69,18 @@ mod outbox;
 mod part_cache;
 mod pins;
 mod pop3;
+mod portal;
 mod rules;
+mod saved_searches;
 mod search;
 #[cfg(feature = "test-hooks")]
 mod selftest;
 mod setup;
+mod signature_form;
 mod status;
+mod support;
 mod triage;
+mod unread;
 mod unsubscribe;
 mod updates;
 mod webview;

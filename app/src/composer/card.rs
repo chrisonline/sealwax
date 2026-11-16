@@ -30,9 +30,9 @@ use gtk4::prelude::*;
 use gtk4::{gdk, gio, glib};
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use sealwax_domain::actions::{ActionId, Scope};
+use sealwax_ui_model::actions::{ActionId, Scope};
 use sealwax_domain::compose::{Draft, DraftPart, mime};
-use sealwax_domain::keymap::Keymap;
+use sealwax_ui_model::keymap::Keymap;
 use sealwax_domain::model::{AccountId, DraftId};
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -193,6 +193,11 @@ struct Inner {
     return_focus: RefCell<Option<glib::WeakRef<gtk::Widget>>>,
     /// The card takes the focus when its body is ready.
     focus_on_ready: Cell<bool>,
+    /// A message started now: its sender's HTML signature goes in when the body is ready.
+    html_signature_due: Cell<bool>,
+    /// A designed signature's hidden part (issue #6): its styled HTML, which the MIME builder
+    /// puts in place of the signature the editor shows.
+    styled_signature: RefCell<Option<DraftPart>>,
     widgets: Widgets,
     editor: Editor,
     backend: Rc<dyn Backend>,
@@ -247,13 +252,13 @@ impl Composer {
             .as_ref()
             .map(|controller| controller.theme())
             .unwrap_or_else(|| {
-                Rc::new(sealwax_domain::theme::Theme::new(
-                    &sealwax_domain::theme::ThemeInputs::builtin(
-                        sealwax_domain::theme::Mode::from_dark(
+                Rc::new(sealwax_ui_model::theme::Theme::new(
+                    &sealwax_ui_model::theme::ThemeInputs::builtin(
+                        sealwax_ui_model::theme::Mode::from_dark(
                             adw::StyleManager::default().is_dark(),
                         ),
                     ),
-                    &sealwax_domain::theme::ThemeOptions::default(),
+                    &sealwax_ui_model::theme::ThemeOptions::default(),
                 ))
             });
         let keymap = state
@@ -285,6 +290,8 @@ impl Composer {
             request_title: RefCell::new("New message".to_owned()),
             return_focus: RefCell::new(return_focus),
             focus_on_ready: Cell::new(focus),
+            html_signature_due: Cell::new(false),
+            styled_signature: RefCell::new(None),
             widgets,
             editor,
             backend,
@@ -1275,6 +1282,13 @@ impl Inner {
                 );
                 return;
             }
+            (Ok(_), Some(_)) if !crate::webview::web_views_allowed().await => {
+                self.show_problem(
+                    "The composer can't open safely: in this Flatpak WebKit can't keep it in a \
+                     sandbox of its own.",
+                );
+                return;
+            }
             (Ok(prepared), Some(filter)) => {
                 self.editor.engine().set_blobs(self.backend.blobs());
                 self.editor.load(&filter);
@@ -1299,11 +1313,9 @@ impl Inner {
             draft,
             senders,
             title,
-            notices,
+            fresh,
         } = prepared;
-        for notice in &notices {
-            self.toast(notice);
-        }
+        self.html_signature_due.set(fresh);
         self.id.set(Some(id));
         self.account.set(draft.account);
         self.request_title.replace(title);
@@ -1312,7 +1324,7 @@ impl Inner {
         let index = senders
             .iter()
             .position(|sender| {
-                own(sender) && sender.address.email.eq_ignore_ascii_case(&draft.from.email)
+                own(sender) && sealwax_domain::address::same(&sender.address.email, &draft.from.email)
             })
             .or_else(|| senders.iter().position(own))
             .unwrap_or(0);
@@ -1340,10 +1352,14 @@ impl Inner {
         }
         self.widgets.subject.set_text(&draft.subject);
         self.show_title();
-        let (inline, attached): (Vec<DraftPart>, Vec<DraftPart>) = draft
-            .parts
-            .iter()
-            .cloned()
+        let (styled, parts): (Vec<DraftPart>, Vec<DraftPart>) =
+            draft.parts.iter().cloned().partition(|part| {
+                part.content_id.is_none()
+                    && part.mime_type == sealwax_domain::compose::identity::STYLED_SIGNATURE_TYPE
+            });
+        self.styled_signature.replace(styled.into_iter().next());
+        let (inline, attached): (Vec<DraftPart>, Vec<DraftPart>) = parts
+            .into_iter()
             .partition(|part| part.content_id.is_some());
         for part in inline {
             if let Some(content_id) = part.content_id {
@@ -1401,14 +1417,99 @@ impl Inner {
         }
         let signature = sender
             .signature
-            .as_ref()
-            .map(|signature| signature.html.clone())
+            .as_deref()
+            .and_then(sealwax_domain::compose::identity::signature)
+            .map(|signature| signature.html)
             .unwrap_or_default();
+        self.styled_signature.replace(None);
         self.editor.eval_detached(&format!(
             "sealwaxComposer.setSignature({})",
             super::js::literal(&signature)
         ));
         self.changed();
+        self.insert_html_signature(index);
+    }
+
+    /// A draft opened again with a designed signature shows it styled, from its hidden part.
+    fn show_styled_signature(self: &Rc<Self>) {
+        let (Some(part), Some(blobs)) =
+            (self.styled_signature.borrow().clone(), self.backend.blobs())
+        else {
+            return;
+        };
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let read = gio::spawn_blocking(move || blobs.get(&part.blob)).await;
+            let Some(inner) = weak.upgrade() else {
+                return;
+            };
+            if let Ok(Ok(data)) = read
+                && let Ok(styled) = String::from_utf8(data)
+            {
+                inner.editor.eval_detached(&format!(
+                    "sealwaxComposer.setStyledSignature({})",
+                    super::js::literal(&styled)
+                ));
+            }
+        });
+    }
+
+    /// The HTML signature of the sender in place `index` (issue #6), once it is read, in place
+    /// of the plain one; when it can't be used, the plain one stays and a toast says why.
+    fn insert_html_signature(self: &Rc<Self>, index: usize) {
+        let Some(sender) = self.senders.borrow().get(index).cloned() else {
+            return;
+        };
+        let Some(path) = sender.signature_html.clone() else {
+            return;
+        };
+        let read = self
+            .backend
+            .html_signature(path, id_domain(&sender.address.email));
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let read = read.await;
+            let Some(inner) = weak.upgrade() else {
+                return;
+            };
+            if inner.sender.get() != index {
+                return;
+            }
+            match read {
+                Ok(signature) => {
+                    for (content_id, image) in signature.images {
+                        inner.editor.add_part(content_id, image);
+                    }
+                    match signature.styled {
+                        Some((styled, part)) => {
+                            inner.styled_signature.replace(Some(part));
+                            inner.editor.eval_detached(&format!(
+                                "sealwaxComposer.setStyledSignature({})",
+                                super::js::literal(&styled)
+                            ));
+                        }
+                        None => {
+                            inner.styled_signature.replace(None);
+                            inner.editor.eval_detached(&format!(
+                                "sealwaxComposer.setSignature({})",
+                                super::js::literal(&signature.block.html)
+                            ));
+                        }
+                    }
+                    inner.changed();
+                }
+                Err(why) => {
+                    let plain = if sender.signature.is_some() {
+                        "the plain one is used"
+                    } else {
+                        "the message has none"
+                    };
+                    inner.toast(&format!(
+                        "The HTML signature can't be used: {why}; {plain}"
+                    ));
+                }
+            }
+        });
     }
 
     fn editor_event(self: &Rc<Self>, event: EditorEvent) {
@@ -1490,6 +1591,11 @@ impl Inner {
         // Unless the user went elsewhere while the draft was prepared.
         if self.focus_on_ready.get() && self.holds_focus() {
             self.take_focus();
+        }
+        if self.html_signature_due.replace(false) {
+            self.insert_html_signature(self.sender.get());
+        } else {
+            self.show_styled_signature();
         }
     }
 
@@ -1698,6 +1804,9 @@ impl Inner {
             }
         };
         let mut parts = self.widgets.tray.parts();
+        if let Some(part) = self.styled_signature.borrow().clone() {
+            parts.push(part);
+        }
         let images = self.editor.parts();
         let mut seen = HashSet::new();
         for cid in cids {
@@ -1954,6 +2063,13 @@ impl Inner {
         let Some(draft) = self.collect().await else {
             return;
         };
+        if !sealwax_domain::address::is_sendable(&draft.from.email) {
+            self.toast(
+                "Not sent: Sealwax can't send from this From address yet (before the @ it may hold \
+                 only English letters, digits and symbols such as . _ + -)",
+            );
+            return;
+        }
         let size = mime::estimate(&draft);
         if let Some(limit) = self.limit.get().filter(|limit| size > *limit) {
             self.update_size();
@@ -2187,13 +2303,13 @@ pub(crate) fn link_target(text: &str) -> Option<String> {
         return (text.len() > lower.find("://")? + 3).then(|| text.to_owned());
     }
     if let Some(address) = lower.strip_prefix("mailto:") {
-        return super::recipients::valid_address(address.split('?').next()?)
+        return sealwax_domain::address::is_sendable(address.split('?').next()?)
             .then(|| text.to_owned());
     }
     if lower.contains(':') {
         return None;
     }
-    if super::recipients::valid_address(text) {
+    if sealwax_domain::address::is_sendable(text) {
         return Some(format!("mailto:{text}"));
     }
     let host = text.split('/').next()?;

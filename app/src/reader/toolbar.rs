@@ -10,8 +10,8 @@ use crate::window::panes::{icon, icon_button};
 use gtk4 as gtk;
 use gtk4::gio;
 use gtk4::prelude::*;
-use sealwax_domain::actions::ActionId;
-use sealwax_domain::keymap::Keymap;
+use sealwax_ui_model::actions::ActionId;
+use sealwax_ui_model::keymap::Keymap;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -41,7 +41,8 @@ const ACTIONS: [(ActionId, &[&str]); 7] = [
 
 /// The More menu's sections (the approved mock's "Show original, Save as .eml", then M5's
 /// conversation and remote-content commands, Unsubscribe and the pins).
-const MORE: [&[ActionId]; 6] = [
+const MORE: [&[ActionId]; 7] = [
+    &[ActionId::ForwardAsAttachment],
     &[ActionId::ShowOriginal, ActionId::SaveMessage],
     &[ActionId::ExpandAll, ActionId::CollapseAll],
     &[ActionId::ShowImages, ActionId::AlwaysShowImages],

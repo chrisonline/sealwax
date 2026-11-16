@@ -18,7 +18,7 @@ use gtk4 as gtk;
 use gtk4::prelude::*;
 use gtk4::{gdk, gio, glib};
 use sealwax_domain::model::BlobKey;
-use sealwax_domain::theme::{Mode, Theme, css_family};
+use sealwax_ui_model::theme::{Mode, Theme, css_family};
 use sealwax_infrastructure::blobs::BlobStore;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
@@ -886,7 +886,7 @@ fn parse_event(value: &Value, state: &State) -> Option<EditorEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sealwax_domain::theme::{ThemeInputs, ThemeOptions};
+    use sealwax_ui_model::theme::{ThemeInputs, ThemeOptions};
 
     #[test]
     fn the_body_takes_the_theme() {
@@ -916,34 +916,5 @@ mod tests {
         assert!(!CONTENT_SECURITY_POLICY.contains("https:"));
         assert!(CONTENT_SECURITY_POLICY.contains("img-src data: cid:;"));
         assert!(FILTER_JSON.contains(r#""url-filter": ".*"}, "action": {"type": "block"}"#));
-    }
-
-    /// The helper keeps an HTML signature's styles by the same lists as the Rust allowlist
-    /// (`domain::compose::signature_html`); a list changed on one side only fails here.
-    #[test]
-    fn the_helpers_signature_lists_are_the_domains() {
-        use sealwax_domain::compose::signature_html::{DISPLAYS, FUNCTIONS, PROPERTIES};
-        let list = |name: &str| -> Vec<String> {
-            let start = HELPER
-                .find(&format!("const {name} = new Set(["))
-                .unwrap_or_else(|| panic!("{name} isn't in helper.js"));
-            let rest = &HELPER[start..];
-            let body = &rest[rest.find('[').unwrap() + 1..rest.find("])").unwrap()];
-            let mut names: Vec<String> = body
-                .split(',')
-                .map(|item| item.trim().trim_matches('\'').to_owned())
-                .filter(|item| !item.is_empty())
-                .collect();
-            names.sort();
-            names
-        };
-        let sorted = |items: &[&str]| {
-            let mut items: Vec<String> = items.iter().map(|item| (*item).to_owned()).collect();
-            items.sort();
-            items
-        };
-        assert_eq!(list("SIGNATURE_PROPERTIES"), sorted(&PROPERTIES));
-        assert_eq!(list("SIGNATURE_DISPLAYS"), sorted(&DISPLAYS));
-        assert_eq!(list("SIGNATURE_FUNCTIONS"), sorted(&FUNCTIONS));
     }
 }

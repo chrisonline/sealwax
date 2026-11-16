@@ -187,8 +187,40 @@ pub fn clean_with(html: &str, keep_cid: impl Fn(&str) -> bool) -> Cleaned {
     clean_once(&cleaned.html, &keep_cid)
 }
 
+/// A signature's HTML (issue #6) through the same allowlist: an image whose `src` `local` maps
+/// to a Content-ID shows that part (`cid:`); every other image, remote, `data:` or `cid:`, is
+/// left out, so a signature never loads anything and never refers to a part it didn't bring.
+pub fn clean_signature(html: &str, local: impl Fn(&str) -> Option<String>) -> Cleaned {
+    let mapped: RefCell<HashSet<String>> = RefCell::default();
+    let rewrite = |source: &str| {
+        let id = local(source.trim())?;
+        let source = format!("cid:{id}");
+        is_image_source(&source).then(|| {
+            mapped.borrow_mut().insert(id);
+            source
+        })
+    };
+    let keep_cid = |id: &str| mapped.borrow().contains(id);
+    let first = clean_rewriting(html, &keep_cid, Some(&rewrite));
+    // As in `clean_with`: a second round over the allowlist's output sees every image.
+    clean_rewriting(&first.html, &keep_cid, None)
+}
+
+/// What a signature's image sources become ([`clean_signature`]).
+type Rewrite<'r> = &'r dyn Fn(&str) -> Option<String>;
+
 fn clean_once(html: &str, keep_cid: &dyn Fn(&str) -> bool) -> Cleaned {
-    let normalized = normalize(html, keep_cid);
+    clean_rewriting(html, keep_cid, None)
+}
+
+/// [`clean_once`]; with `rewrite`, every image's `src` is what `rewrite` makes of it, and an
+/// image it gives nothing for is left out.
+fn clean_rewriting(
+    html: &str,
+    keep_cid: &dyn Fn(&str) -> bool,
+    rewrite: Option<Rewrite<'_>>,
+) -> Cleaned {
+    let normalized = normalize(html, keep_cid, rewrite);
     let html = BUILDER
         .clean(&normalized)
         .to_string()
@@ -198,7 +230,7 @@ fn clean_once(html: &str, keep_cid: &dyn Fn(&str) -> bool) -> Cleaned {
     let mut content_ids: Vec<String> = Vec::new();
     for source in &sources {
         if has_prefix(source, "cid:") {
-            let id = percent_decode(&source[4..]);
+            let id = crate::percent::decode(&source[4..]);
             if !content_ids.contains(&id) {
                 content_ids.push(id);
             }
@@ -240,28 +272,6 @@ fn image_sources(html: &str) -> Vec<String> {
     let _ = tokenizer.feed(&input);
     tokenizer.end();
     tokenizer.sink.0.take()
-}
-
-/// RFC 2392: a `cid:` URL is the Content-ID percent-encoded.
-fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%'
-            && let Some(hex) = bytes.get(index + 1..index + 3)
-            && hex.iter().all(u8::is_ascii_hexdigit)
-            && let Ok(hex) = std::str::from_utf8(hex)
-            && let Ok(byte) = u8::from_str_radix(hex, 16)
-        {
-            out.push(byte);
-            index += 3;
-        } else {
-            out.push(bytes[index]);
-            index += 1;
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 static BUILDER: LazyLock<Builder<'static>> = LazyLock::new(|| {
@@ -344,7 +354,7 @@ fn is_image_source(value: &str) -> bool {
 
 /// The first pass: presentational markup as the tags the allowlist keeps, and nothing nested
 /// deeper than [`html_depth::MAX_DEPTH`] (its start tags are left out, its content kept).
-fn normalize(html: &str, keep_cid: &dyn Fn(&str) -> bool) -> String {
+fn normalize(html: &str, keep_cid: &dyn Fn(&str) -> bool, rewrite: Option<Rewrite<'_>>) -> String {
     let sink = Normalizer {
         out: RefCell::new(String::with_capacity(html.len())),
         stack: RefCell::new(Vec::new()),
@@ -354,6 +364,7 @@ fn normalize(html: &str, keep_cid: &dyn Fn(&str) -> bool) -> String {
         nesting: RefCell::new(Nesting::new(html_depth::MAX_DEPTH, true)),
         skipping: Cell::new(false),
         keep_cid,
+        rewrite,
     };
     let tokenizer = Tokenizer::new(sink, TokenizerOpts::default());
     let input = BufferQueue::default();
@@ -396,6 +407,8 @@ struct Normalizer<'k> {
     /// A raw text element left out as too deep: its text goes too, up to its end tag.
     skipping: Cell<bool>,
     keep_cid: &'k dyn Fn(&str) -> bool,
+    /// A signature's image sources ([`clean_signature`]).
+    rewrite: Option<Rewrite<'k>>,
 }
 
 impl TokenSink for Normalizer<'_> {
@@ -499,6 +512,23 @@ impl Normalizer<'_> {
                 None => TokenSinkResult::Continue,
             };
         }
+        if name == "img"
+            && let Some(rewrite) = self.rewrite
+        {
+            let Some(source) = attribute(&tag.attrs, "src").and_then(rewrite) else {
+                return TokenSinkResult::Continue;
+            };
+            let mut attrs = tag.attrs.clone();
+            for attr in &mut attrs {
+                if &*attr.name.local == "src" {
+                    attr.value = source.as_str().into();
+                }
+            }
+            if self.image_kept(&attrs) {
+                self.write_tag("img", &attrs, true);
+            }
+            return TokenSinkResult::Continue;
+        }
         if name == "img" && !self.image_kept(&tag.attrs) {
             return TokenSinkResult::Continue;
         }
@@ -587,7 +617,7 @@ impl Normalizer<'_> {
             return false;
         }
         let source = source.trim();
-        !has_prefix(source, "cid:") || (self.keep_cid)(&percent_decode(&source[4..]))
+        !has_prefix(source, "cid:") || (self.keep_cid)(&crate::percent::decode(&source[4..]))
     }
 
     /// Writes a start tag. A `kept` tag (outside dropped elements) loses its `style`, which the

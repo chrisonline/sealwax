@@ -13,12 +13,12 @@ use gtk4::prelude::*;
 use gtk4::{gdk, glib};
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use sealwax_domain::actions::ActionId;
 use sealwax_domain::folders;
 use sealwax_domain::model::{AccountId, Folder, FolderId, MessageId};
-use sealwax_domain::palette;
 use sealwax_engine::api::Command;
 use sealwax_infrastructure::store::{NotApplied, QueueLabel};
+use sealwax_ui_model::actions::ActionId;
+use sealwax_ui_model::fuzzy;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -490,7 +490,7 @@ impl Inner {
         let query = entry.text();
         let shown: Vec<usize> = {
             let choices = self.choices.borrow();
-            palette::rank(&query, choices.iter().map(|choice| choice.name.as_str()))
+            fuzzy::rank(&query, choices.iter().map(|choice| choice.name.as_str()))
         };
         list.remove_all();
         {

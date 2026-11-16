@@ -18,13 +18,14 @@ This guide is for people who use Sealwax every day. It describes Sealwax 1.0. Ev
 - [Settings files](#settings-files)
 - [Privacy and security](#privacy-and-security)
 - [Troubleshooting](#troubleshooting)
+- [Getting help](#getting-help)
 - [Removing Sealwax and its data](#removing-sealwax-and-its-data)
 
 ## Installing
 
 [INSTALL.md](../INSTALL.md) explains every step in plain words: installing Sealwax with one command, updating and uninstalling it, and building it from source.
 
-Sealwax is made for Omarchy 4 (Arch Linux, Hyprland), and also runs on other Linux desktops with GTK 4 and a Secret Service such as gnome-keyring.
+Sealwax is made for Omarchy 4 (Arch Linux, Hyprland), and also runs on other Linux desktops with GTK 4 and a Secret Service such as gnome-keyring. On other Linux systems the Flatpak is the easy way ([INSTALL.md](../INSTALL.md#on-other-linux-systems-flatpak)); it updates with `flatpak update` or your software centre, so its menu has no Check for Updates….
 
 **Updating.** **Check for Updates…** in the main menu (or the palette) asks GitHub which Sealwax release is the latest and says whether you have it. When a newer one is out, it shows the command that installs it, with a **Copy Command** button: paste the command into a terminal, press Enter and type your computer's password when asked, then quit Sealwax (Ctrl+Q) and start it again. Sealwax never checks by itself and never installs anything itself.
 
@@ -43,6 +44,8 @@ With no account yet, the window shows **No accounts yet** and an **Add an accoun
 5. **Done.** A toast says "Added" and your address, the account's folders appear in the sidebar and its mail starts to sync.
 
 Enter goes to the next step; Escape goes back a step and closes the assistant on the first one. When a login fails, the assistant says why, what to do next and which settings it tried.
+
+Sealwax can't yet send from an address with letters such as ö or é before the @, so the assistant doesn't add one. An account written by hand in `accounts.toml` with such an address still gets its mail, but Sealwax can't send from that address.
 
 The account's settings go into `accounts.toml` ([Settings files](#settings-files)); the password or sign-in token goes into your keyring, never into a file.
 
@@ -166,6 +169,8 @@ The layout follows the window's width, so it works tiled:
 
 **Drag the borders** between the sidebar and the list, and between the list and the reader, to make a pane wider or narrower; double-click a border to put its default width back. The sidebar takes 160 to 360 px and the list 280 to 640 px, and the reader always keeps room for its toolbar. Sealwax remembers the widths. The message in the reader fills the reader's width up to 1,200 px.
 
+**The list on its own.** If you'd rather see only the list and open a message when you want to read it, choose **Toggle Reading Pane** in the main menu, under Toggle Sidebar (the command palette has it too). The list then takes the reader's room beside the folders, in a window of any width, and the main menu's button moves to the start of the list's bar, before the folder's name. Enter or a double click opens the selected message in the list's place (`o` and `l` open it too), and Escape, `u` or the back button at the start of its toolbar goes back to the list; the main menu's button is beside the back button there, so the menu is at hand either way. A message is marked read when you open it, not when you select it. Choose Toggle Reading Pane again to put the reader back beside the list; the menu shows a check mark while it is there. Sealwax remembers the choice for the next window. The command has no key; `keys.toml` can give it one (`toggle-reading-pane`).
+
 On Hyprland the window has no title bar; on other desktops the window controls sit at the ends of the pane bars.
 
 **Account status.** Each account's heading has its name (the account name you gave it, else its address), a dot and a word: synced, syncing…, offline, sending off, mailbox full, needs sign-in, needs adding again or bad certificate. An account with a colour shows its name and its synced dot in that colour; a dot that warns stays the warning's colour. A state that needs you shows as a **banner** across the top of the window, the most important first: no keyring, a certificate that no longer verifies, a sign-in or password needed, an account to add again, sending turned off, a message that may have been sent, a full mailbox, offline. Short results (archived, sent, saved) show as **toasts** at the bottom.
@@ -241,11 +246,14 @@ A toast says how it went. Sealwax remembers whom you unsubscribed from, and the 
 | Star or Unstar | `s` | Stars the messages, or unstars them when all are starred |
 | Mark as Read, Mark as Unread | Shift+I, Shift+U | |
 | Mark Folder as Read | — | A right-click on a folder in the sidebar (or Menu, or Shift+F10), or the palette |
+| Empty Trash | — | A right-click on an account's Trash folder in the sidebar (or Menu, or Shift+F10); it is that folder's menu's first item, and it is on no other |
 | Undo | `z`, Ctrl+Z | Undoes the last action |
 
 The same commands are buttons in the reader's toolbar, and hovering a row shows archive, delete and star for that row. A button that doesn't apply says why in its tooltip ("already archived", "the account has no Junk folder").
 
 **Undo.** An action that moves messages or changes several shows a toast, such as "Archived 3 messages", with **Undo** for 7 seconds. `z` or Ctrl+Z undoes the last action while it still can be, also after the toast has gone. Deleting for good waits for those 7 seconds before it reaches the server, so it can be undone too.
+
+**Empty Trash.** An account's Trash folder has **Empty Trash** on its sidebar row's menu, first there and nowhere else: it deletes that folder's messages for good, here and on the server, including the mail older than what the list holds that Sealwax never downloaded. The folder is still empty when you open it again. The toast names the account, since every account has its own Trash; emptying one leaves the others alone. **Undo** stands for the usual 7 seconds; after that, the toast says what can't be brought back.
 
 **Several messages.** Ctrl+click adds a message, Shift+click selects a range, and Shift with `j`/`k` or Down/Up extends the selection from the keyboard. `x` or Space selects the message under the cursor and turns the list into a select mode with checkboxes, where `j`/`k` move without changing the selection. Every command applies to every selected message; the reader shows how many are selected, with buttons. Escape leaves the select mode. Move to… can't move messages between accounts.
 
@@ -315,16 +323,30 @@ Pasted text keeps simple formatting and loses the rest; **Paste as Plain Text** 
 
 **Attachments.** **Attach File…** in the composer's header, or drag files onto the composer. An image pasted into the text goes into the message itself. Sealwax knows how large a message your outgoing server takes: a message that is too large shows a warning and isn't sent ("Not sent: … is more than this account's server takes").
 
+**Forward as Attachment.** In the message menu (right-click a message), the reader's **More** menu and the palette: a new message with the selected messages attached whole, as `.eml` files named after their subjects, so the recipient gets them exactly as they came, headers and attachments included. It works on several selected messages at once; the subject is the first message's, with "and 2 more" for the others. Only the server's original is attached: when a message Sealwax keeps only as its text can't be downloaded (offline), it says so and attaches nothing. It has no key; `keys.toml` can give it one (`forward-as-attachment`).
+
 **Identities and signatures** are set in `accounts.toml` ([below](#accountstoml)): `signature` on an account, and an `[[account.identity]]` table for each other address the account sends from, with its own name and signature. A signature is plain text, put under what you write after a `-- ` line.
 
-**HTML signatures.** For a designed signature, with your logo, colours and links, write it as an HTML file and name it with `signature_html` on the account or the identity, for example `signature_html = "signatures/work/signature.html"`; a path that doesn't start with `/` is in Sealwax's config folder (`~/.config/sealwax/`). Put its images beside it and name them by their path from there (`<img src="logo.png">`): Sealwax sends them inside the message, so people see the logo without loading anything from the web. Images on the web (`https://…`) aren't used.
+**HTML signatures.** The easy way: right-click the account's name in the sidebar and choose **Signature…** (it is in the palette too). It makes a simple designed signature: your picture at the left (a photo, shown round, or a logo), your name in bold, your title and company in grey and the icons of your social profiles (LinkedIn, X, GitHub, Instagram, Facebook, YouTube) as links, then a thin line and your address, phone, email and website, each after a small grey icon. It sets no text colour but that grey and no background, so it reads in light and dark mail alike: the text takes the colour of the reader's mail program. Fill in what you want (every field is optional), choose a picture (PNG, JPEG or GIF, up to 1 MB), and check the preview, which shows it as light and as dark mail; **Save** makes the signature and every new message from that address has it. In the composer it can't be edited: change it in the form. An account that sends from several addresses lets you pick the address at the top. **Remove Signature** stops using it (its files stay). The form keeps what you typed, so it opens with it next time; a signature you wrote by hand is never overwritten: the form makes its own file and uses that instead.
 
-- **What it keeps:** text, links (web, `mailto:` and `tel:`), images, lists and tables, `span`, and inline `style` with colours, fonts, sizes, spacing, borders and alignment. Everything else goes: scripts, forms, `<style>` blocks, `url(…)` in styles, positioning. Style with `<span style="…">`: `<font>` and `<center>` lose their look and keep their text.
-- **Leave the text colour out:** without a `color` of its own the signature's text takes the colour of what you write, white in a dark theme and black on paper, and stays readable in your recipients' dark mode too. A signature copied from another mail program often sets a dark grey for all its text, which is hard to read on a dark theme; keep colours for accents such as labels and links.
-- **Images:** PNG, JPEG, GIF or WebP, at most 1 MiB each and 4 MiB together, inside the signature's folder (no `..`, no links out of it). The file itself is at most 256 KiB.
-- **When it's read:** each time you start a message, so a change to the file applies to the next one. A draft keeps the signature it was started with.
-- **When it can't be used** (a missing file or image, an image on the web), the composer says why as it opens, and your plain `signature` stands in. The plain text part of the message is made from the HTML signature's text.
-- Changing the sender in the composer swaps the signature, HTML or plain, as before. You can still edit the signature in the message you're writing.
+For a signature the form can't make, write it as an HTML file in Sealwax's signatures folder, `~/.config/sealwax/signatures/`, with its images beside it, and name the file with `signature_html` on the account or identity:
+
+```text
+~/.config/sealwax/signatures/work/signature.html
+~/.config/sealwax/signatures/work/logo.png
+```
+
+```toml
+signature_html = "work/signature.html"
+```
+
+In the file, an image names its file the way a web page does, `<img src="logo.png" alt="Acme">`, relative to the HTML file; Sealwax sends each image inside the message (as an inline part), never as a link or a path on your computer. When you start a message, reply or forward, the composer shows the signature as it will be sent, under what you write and above the quoted message, and changing **From** puts the other address's signature in its place.
+
+- **What it keeps,** for a file you write yourself, is what the composer itself can write: bold, italic, underline, strikethrough, links (web and `mailto:`), lists, tables and line breaks. Colours, fonts, sizes and other styles are left out, and so are scripts, forms and anything that would load from the internet, including images on a web address.
+- **Images:** PNG, JPEG or GIF files of at most 1 MB each, at most ten, in the HTML file's own folder or below it. The file itself can be at most 256 KB.
+- **The plain-text part** of the message is made from the HTML, as for the rest of what you write.
+- **When it can't be used** (the file or an image is missing, an image is something else than PNG, JPEG or GIF, or a path leads outside the folder), a notice says why and the plain `signature` is used instead, if there is one. Nothing broken is ever sent.
+- **Drafts** keep the signature as it was put in, images included, so changing the file later changes new messages only. The quick reply under a conversation, which is plain text, uses the plain `signature`.
 
 **Sending.** Send closes the composer and the main window shows "Message queued" with **Undo** for 7 seconds (`z` and Ctrl+Z work too); Undo puts the draft back in a composer. Then "Message sent". Without a network, the message waits in the outbox and goes when the network is back. A copy goes into the Sent folder, unless the server files one itself (Outlook.com and Microsoft 365 do).
 
@@ -361,6 +383,8 @@ Press `/` or Ctrl+F (or click the search field) and type: the results follow eve
 
 **Where it searches.** In a folder, a search covers that folder, and a row under the chips offers **Search in** that folder or **All folders**. In All Inboxes it covers every folder. A search of every folder leaves out Trash and Junk (search inside them to find their mail).
 
+**Saved searches.** While a search runs, **Save Search…** (in the palette, no key; `keys.toml` can give it one: `save-search`) keeps it under a name, the query by default, in a **Searches** section of the sidebar under All Inboxes. Clicking it shows its folder and runs the search again: a search of one folder runs there, and a search of every folder, or one made from All Inboxes, runs from All Inboxes. Right-click a saved search (or press Menu or Shift+F10 on it) to **Rename Search…** or **Remove Search**. Up to 50 are kept, in `layout.toml` with the window's layout ([where Sealwax keeps things](#where-sealwax-keeps-things)); they follow a folder you rename. Saved searches show in the full sidebar, not in the narrow one.
+
 **What it searches.** Search runs on this computer, over the mail Sealwax has stored: every synced message's headers and preview, and the full text of messages that have been downloaded (Inbox mail from the last 14 days downloads in the background; other messages when you open them; text past the first 256 KiB of a message isn't indexed). Searching on the server comes in a later version. **Rebuild Search Index** (in the palette) indexes the stored mail again; search keeps working while it runs.
 
 ## Notifications and background mode
@@ -375,6 +399,8 @@ In `config.toml`, `[notifications] show = "count"` shows only "New mail" and how
 - To make closing the window quit, set `enabled = false` under `[background]` in `config.toml`.
 
 **Start Sealwax at Login** (a check item in the main menu, and in the palette) asks first, then writes `~/.config/autostart/io.github.pixdevsapps.Sealwax.desktop`, which runs `sealwax --background` at login: Sealwax starts without a window, so mail syncs from the start. Turning it off deletes that file. A change takes effect at your next login. `sealwax --background` does the same by hand.
+
+**The unread count for other programs.** While Sealwax runs, with or without a window, it keeps the number of unread messages in your Inboxes (All Inboxes' number) in `$XDG_RUNTIME_DIR/sealwax/unread.json`, and removes the file when it quits. A bar widget or a script can show it without reading your mail and without starting Sealwax. `sealwax --unread` prints the number, and exits 1 when Sealwax isn't running. The file also gives each account's number, by the account's label (an account without one is "Account 2", never its address). For Omarchy's bar there is a widget in [`contrib/omarchy-plugin`](https://github.com/PixDevsApps/sealwax/tree/main/contrib/omarchy-plugin): Sealwax's icon with the number beside it, nothing at 0, and a click that opens Sealwax ([issue #17](https://github.com/PixDevsApps/sealwax/issues/17)). In the Flatpak the file is in `$XDG_RUNTIME_DIR/app/io.github.pixdevsapps.Sealwax/`.
 
 On Omarchy you can open Sealwax with a key binding (SUPER+SHIFT+E, say) and add it to the Omarchy menu: [INTEGRATIONS.md](INTEGRATIONS.md#hyprland) has snippets to paste into your own Hyprland and menu files (Sealwax never edits them itself; the snippets are not tried on a live desktop yet).
 
@@ -403,11 +429,15 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | Navigation | Open Message | Enter, o, l | list | `open-message` |
 | Navigation | Back to List | Escape, u | reader | `back-to-list` |
 | Navigation | Search | /, Ctrl+F | /: list and reader; Ctrl+F: anywhere | `search` |
+| Navigation | Save Search… | — |  | `save-search` |
+| Navigation | Rename Search… | — |  | `rename-search` |
+| Navigation | Remove Search | — |  | `remove-search` |
 | Navigation | Go to Inbox | g then i | list and reader | `go-to-inbox` |
 | Navigation | Go to Starred | g then s | list and reader | `go-to-starred` |
 | Navigation | Go to Sent | g then t | list and reader | `go-to-sent` |
 | Navigation | Go to Drafts | g then d | list and reader | `go-to-drafts` |
 | Navigation | Go to All Inboxes | g then a | list and reader | `go-to-all-inboxes` |
+| Navigation | Go to Folder… | g then f | list and reader | `go-to-folder` |
 | Navigation | Go to Account 1 | g then 1 | list and reader | `go-to-account-1` |
 | Navigation | Go to Account 2 | g then 2 | list and reader | `go-to-account-2` |
 | Navigation | Go to Account 3 | g then 3 | list and reader | `go-to-account-3` |
@@ -421,10 +451,12 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | Messages | Delete | #, Delete | list and reader | `delete` |
 | Messages | Move to Junk | !, Ctrl+J | list and reader | `junk` |
 | Messages | Move to… | v, Ctrl+Shift+V | list and reader | `move-to` |
+| Messages | Label… | Shift+L | list and reader | `label` |
 | Messages | Star or Unstar | s | list and reader | `star` |
 | Messages | Mark as Read | Shift+I | list and reader | `mark-read` |
 | Messages | Mark as Unread | Shift+U | list and reader | `mark-unread` |
 | Messages | Mark Folder as Read | — |  | `mark-folder-read` |
+| Messages | Empty Trash | — |  | `empty-trash` |
 | Messages | New Folder… | — |  | `new-folder` |
 | Messages | Rename Folder… | — |  | `rename-folder` |
 | Messages | Delete Folder… | — |  | `delete-folder` |
@@ -442,6 +474,7 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | Compose | Reply All | a, Ctrl+Shift+R | list and reader | `reply-all` |
 | Compose | Reply to Sender | — |  | `reply-sender` |
 | Compose | Forward | f, Ctrl+L | list and reader | `forward` |
+| Compose | Forward as Attachment | — |  | `forward-as-attachment` |
 | Compose | Send | Ctrl+Enter | composer | `send` |
 | Compose | Edit Draft | — |  | `edit-draft` |
 | Compose | Quick Reply | — |  | `quick-reply` |
@@ -470,12 +503,14 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | View | Always Show Images from This Sender | — |  | `always-show-images` |
 | View | Refresh | Ctrl+Alt+R, F5 | anywhere | `refresh` |
 | View | Toggle Sidebar | Ctrl+Shift+S, F9 | anywhere | `toggle-sidebar` |
+| View | Toggle Reading Pane | — |  | `toggle-reading-pane` |
 | View | Command Palette | Ctrl+Shift+P, F1 | anywhere | `command-palette` |
 | View | Group by Sender | — |  | `group-by-sender` |
 | View | Group by Domain | — |  | `group-by-domain` |
 | View | Don't Group | — |  | `dont-group` |
 | General | Add Account | — |  | `add-account` |
 | General | Edit Account | — |  | `edit-account` |
+| General | Signature… | — |  | `edit-signature` |
 | General | Remove Account | — |  | `remove-account` |
 | General | Keyboard Shortcuts | ?, h, Ctrl+? | ?, h: list and reader; Ctrl+?: anywhere | `shortcuts` |
 | General | Preferences (config.toml) | Ctrl+, | anywhere | `preferences` |
@@ -483,6 +518,10 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | General | Rebuild Search Index | — |  | `rebuild-search-index` |
 | General | Start Sealwax at Login | — |  | `start-at-login` |
 | General | Make Sealwax the Default Mail App… | — |  | `default-mail-app` |
+| General | User Guide | — |  | `user-guide` |
+| General | Contact Support… | — |  | `contact-support` |
+| General | Report an Issue | — |  | `report-issue` |
+| General | About Sealwax | — |  | `about` |
 | General | Check for Updates… | — |  | `check-for-updates` |
 | General | Quit | Ctrl+Q | anywhere | `quit` |
 | General | Pinned Senders… | — |  | `pinned-senders` |
@@ -495,7 +534,7 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 
 "—" means the command has no key: the palette, a menu or a button reaches it, and `keys.toml` can give it one.
 
-**Going places.** Go to Inbox, Sent and Drafts (`g` then `i`, `t`, `d`) show that folder of the account the list shows (in All Inboxes, the selected message's account, else the first); Go to Inbox in All Inboxes stays there. Go to Starred (`g` then `s`) turns on the **Starred** chip, as there is no Starred folder. Back to List (Escape or `u` in the reader) puts the keyboard focus in the message list, and in the one-pane layout shows the list, as the reader's back button does. Go to All Inboxes (`g` then `a`) shows every account's Inbox together, and Go to Account 1 to 9 (`g` then `1` to `9`) shows that account's Inbox, counting the accounts as the sidebar lists them.
+**Going places.** Go to Inbox, Sent and Drafts (`g` then `i`, `t`, `d`) show that folder of the account the list shows (in All Inboxes, the selected message's account, else the first); Go to Inbox in All Inboxes stays there. Go to Starred (`g` then `s`) turns on the **Starred** chip, as there is no Starred folder. Back to List (Escape or `u` in the reader) puts the keyboard focus in the message list, and in the one-pane layout shows the list, as the reader's back button does. Go to All Inboxes (`g` then `a`) shows every account's Inbox together, and Go to Account 1 to 9 (`g` then `1` to `9`) shows that account's Inbox, counting the accounts as the sidebar lists them. **Go to Folder…** (`g` then `f`) opens a picker over every account's folders, All Inboxes first, each folder with its account beside it when you have more than one: type to filter, Up and Down, Enter shows the folder, Escape closes.
 
 **Reading from the list.** Scroll Message Down and Up (`d` and Shift+D) move the open message half a screen, from the list or the reader, so you can read on without leaving the list; `j` and `k` still move between messages. `l` opens the message, as Enter and `o` do.
 
@@ -544,6 +583,7 @@ Sealwax has no settings window: its settings are three plain files in `~/.config
 | `[appearance]` | `corner_radius` | `"auto"` | `"auto"` (Hyprland's rounding; 0 outside Hyprland) or whole pixels from 0 to 64 |
 | | `chrome_font` | `"omarchy"` | `"omarchy"` (the Omarchy font) or `"sans"` |
 | | `reading_font` | `"sans"` | `"sans"` or `"mono"` |
+| | `dark_styled_mail` | `false` | `true`: mail with a design of its own shows in dark colours under a dark theme ([above](#theme-fonts-and-corners)) |
 | `[oauth.microsoft]` | `client_id` | the build's, if any | The Microsoft client ID for Sign in with Microsoft ([above](#outlookcom-hotmail-and-microsoft-365-sign-in-with-microsoft)) |
 | `[storage]` | `cache_size` | `"2 GiB"` | Disk space for downloaded messages: a size such as `"2 GiB"` or `"500 MB"` (at least 100 MiB), or `"unlimited"`. When it is full, the messages opened longest ago keep only their headers and preview, and download again when opened. POP3 mail and drafts are never removed this way |
 | | `prefetch_days` | `14` | Inbox mail from this many days downloads in the background, so it opens without waiting; 0 to 365, 0 turns it off |
@@ -606,7 +646,7 @@ address = "board@example.com"
 | | `username` | the address | The login name, when it isn't the address |
 | | `auth` | `"password"` | `"password"` (a password or app password, kept in the keyring) or `"microsoft"` (Sign in with Microsoft) |
 | | `signature` | none | Plain text put under your messages after a `-- ` line; at most 10,000 characters |
-| | `signature_html` | none | An HTML signature in place of `signature`, its file's path (relative to Sealwax's config folder, or absolute); its images lie beside it ([HTML signatures](#writing-mail)). `signature` stands in when it can't be read |
+| | `signature_html` | none | An HTML signature's file in `~/.config/sealwax/signatures/`, such as `"work/signature.html"`; used in place of `signature` when it can be read ([HTML signatures](#writing-mail)) |
 | `[account.imap]` | `host` | — (required) | The IMAP server |
 | | `port` | 993 with `"tls"`, 143 with `"starttls"` | |
 | | `security` | `"tls"` | `"tls"` or `"starttls"`; there is no setting without encryption |
@@ -622,7 +662,7 @@ address = "board@example.com"
 | `[[account.identity]]` | `address` | — (required) | Another address the account sends from |
 | | `name` | the account's name | |
 | | `signature` | none | That identity's signature |
-| | `signature_html` | none | That identity's HTML signature |
+| | `signature_html` | none | That identity's HTML signature, as for an account |
 
 A line that looks like a password, secret or token is a mistake anywhere in the file: those live only in the keyring.
 
@@ -637,7 +677,7 @@ Sealwax talks only to the servers your mail needs, and keeps each message sealed
 | Your domain's own HTTPS autoconfig | Your full address | While adding an account |
 | Mozilla's ISPDB, DNS, and likely mail server names | Only your domain name; a TLS check of the servers, without your address | While adding an account |
 | Servers that hold a message's images | Your IP address and the time, as for any web page | Only for a message or sender you allowed |
-| Your browser | A link you chose to open | When you open it |
+| Your browser | A link you chose to open, and the online user guide | When you open it |
 | Your desktop's notification server | A new message's sender and subject (only a count with `show = "count"`) | New mail, unless notifications are off |
 | GitHub (`api.github.com`) | A request for Sealwax's latest release, with nothing about you in it; GitHub sees your IP address | Only when you choose Check for Updates… |
 
@@ -689,15 +729,19 @@ Sealwax writes a plain-text log of what it does, never with message content, add
 | --- | --- |
 | Settings (`config.toml`, `keys.toml`, `accounts.toml`) | `~/.config/sealwax/` |
 | Each account's rules (`rules/<key>.sieve`) | `~/.config/sealwax/rules/` |
+| HTML signatures and their images | `~/.config/sealwax/signatures/` |
 | Your mail: the store (`store.sqlite`) and message files (`blobs/`) | `~/.local/share/sealwax/` |
-| Small state (the window's layout in `layout.toml`, the background notice, unfinished account changes) | `~/.local/state/sealwax/` |
+| Small state (the window's layout and the saved searches in `layout.toml`, the background notice, unfinished account changes) | `~/.local/state/sealwax/` |
 | Cache (the reader's content filters, which Sealwax makes again) | `~/.cache/sealwax/` |
 | Attachments you opened (emptied at the next start and at logout) | `$XDG_RUNTIME_DIR/io.github.pixdevsapps.Sealwax/attachments/` |
+| The unread count for other programs, while Sealwax runs | `$XDG_RUNTIME_DIR/sealwax/unread.json` |
 | Passwords and sign-in tokens | Your keyring, as items with `application` = `io.github.pixdevsapps.Sealwax` |
 | Start Sealwax at Login, when on | `~/.config/autostart/io.github.pixdevsapps.Sealwax.desktop` |
 | The default mail app, when chosen | The `x-scheme-handler/mailto` line in `~/.config/mimeapps.list` |
 
 The folders follow `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME` when they are set.
+
+**In the Flatpak** the same folders are inside `~/.var/app/io.github.pixdevsapps.Sealwax/`: `config/sealwax/`, `data/sealwax/`, `.local/state/sealwax/` and `cache/sealwax/`. Passwords and tokens are kept in an encrypted keyring file in `data/keyrings/`, locked with a key from your desktop's secret portal, Start at Login is asked of the desktop (GNOME and KDE offer it, Omarchy doesn't), and Sealwax doesn't make itself the default mail app: choose it in your system's settings.
 
 ### Common problems
 
@@ -722,6 +766,18 @@ The folders follow `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG
 ### Starting over
 
 To start from scratch: remove every account in Sealwax (Remove Account), quit with Ctrl+Q, then delete Sealwax's folders as in [Removing Sealwax and its data](#removing-sealwax-and-its-data), keeping the package installed. Removing the accounts first also deletes their keyring items.
+
+## Getting help
+
+The main menu's **Help** submenu, above **Check for Updates…**, has these; the palette has the same commands.
+
+- **User Guide** opens this guide on the web, at [pixdevs.com/guides/sealwax](https://pixdevs.com/guides/sealwax/).
+- **Contact Support…** shows Sealwax's support address, **support@pixdevs.com**, and a few lines about your Sealwax: its version, how it was installed (package, Flatpak or built from source), your Linux system, desktop and the GTK, libadwaita and WebKitGTK versions, and how many accounts it has. They say nothing about your mail, your addresses or your servers. Each has a **Copy** button. With an account added, **Write to Support** opens a new message to support with those lines in it; write what happened and what you expected above them, and send it as any other message. Nothing is sent until you send it.
+- **Can't add an account?** The setup assistant's problems, and the note when Microsoft's sign-in waits, have a **Get help from Sealwax's support** button that opens Contact Support. Copy the address and the lines, and write from your webmail or another mail app.
+- **Report an Issue** opens a new issue on Sealwax's GitHub page, if you have a GitHub account: a bug, or an idea for Sealwax.
+- **About Sealwax** shows the version, the guide, support, and the same lines under Troubleshooting → Debugging Information.
+
+If you use GitHub, you can also [open an issue](https://github.com/PixDevsApps/sealwax/issues). A security problem goes privately to the [security policy](../SECURITY.md)'s address instead.
 
 ## Removing Sealwax and its data
 

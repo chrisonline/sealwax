@@ -18,7 +18,7 @@
 //!   256 KiB), without its inline images (M9, F14).
 
 use super::clean;
-use super::identity::{self, Signature};
+use super::identity::{self, SignatureBlock};
 use super::quote::{self, QuotedDate};
 use super::text;
 use super::{Draft, DraftPart, DraftSource, ReplyKind, address, ids};
@@ -255,7 +255,11 @@ impl Reply {
     /// The draft's HTML: what the user typed (an empty line when nothing yet), the sender's
     /// signature, then the quote.
     pub fn html(&self, typed_html: &str) -> String {
-        let signature = identity::signature_of(&self.sender);
+        let signature = self
+            .sender
+            .signature
+            .as_deref()
+            .and_then(identity::signature);
         super::body(typed_html, signature.as_ref(), Some(&self.quote_html))
     }
 
@@ -289,8 +293,11 @@ impl Reply {
     }
 
     /// The signature under the typed text, for a composer that shows it apart.
-    pub fn signature(&self) -> Option<Signature> {
-        identity::signature_of(&self.sender)
+    pub fn signature(&self) -> Option<SignatureBlock> {
+        self.sender
+            .signature
+            .as_deref()
+            .and_then(identity::signature)
     }
 }
 
@@ -326,7 +333,7 @@ pub fn recipients(
 ) -> (Vec<Address>, Vec<Address>) {
     let valid = |list: &[Address]| -> Vec<Address> {
         list.iter()
-            .filter(|address| address::is_valid(&address.email))
+            .filter(|address| crate::address::is_sendable(&address.email))
             .cloned()
             .collect()
     };
@@ -356,7 +363,7 @@ pub fn recipients(
                     !own(address)
                         && !to
                             .iter()
-                            .any(|known| address::same(&known.email, &address.email))
+                            .any(|known| crate::address::same(&known.email, &address.email))
                 })
                 .collect();
             if to.is_empty() && cc.is_empty() {
@@ -433,12 +440,64 @@ pub fn forward_subject(subject: &str) -> String {
     )
 }
 
+/// Forward as Attachment's subject for `count` messages, the first's `subject`: "Fwd: Kvartal",
+/// "Fwd: Kvartal and 2 more", or "Fwd: 3 messages" when the first has none.
+pub fn forward_subjects(subject: &str, count: usize) -> String {
+    let first = forward_subject(subject);
+    match count.saturating_sub(1) {
+        0 => first,
+        _ if first == "Fwd:" => format!("Fwd: {count} messages"),
+        more => format!("{first} and {more} more"),
+    }
+}
+
 fn prefixed(prefix: &str, rest: &str) -> String {
     if rest.is_empty() {
         prefix.to_owned()
     } else {
         format!("{prefix} {rest}")
     }
+}
+
+/// Whom Reply All answers of a message with `headers`, To then Cc, `mine` being the user's
+/// addresses.
+pub fn everyone(headers: &Headers, mine: &[String]) -> Vec<Address> {
+    let senders: Vec<Identity> = mine
+        .iter()
+        .map(|address| Identity {
+            name: String::new(),
+            address: address.clone(),
+            signature: None,
+            signature_html: None,
+        })
+        .collect();
+    let (to, cc) = recipients(headers, ReplyKind::ReplyAll, &senders);
+    to.into_iter().chain(cc).collect()
+}
+
+/// The message a quick reply answers, of `messages` oldest first: the latest that isn't the
+/// user's own (`sender` among `mine`) and isn't a draft; when every message is the user's own,
+/// the latest that isn't a draft; `None` when there are only drafts.
+pub fn reply_target<'a, T>(
+    messages: &'a [T],
+    mine: &[String],
+    sender: impl Fn(&T) -> &str,
+    is_draft: impl Fn(&T) -> bool,
+) -> Option<&'a T> {
+    let candidates: Vec<&T> = messages
+        .iter()
+        .filter(|message| !is_draft(message))
+        .collect();
+    candidates
+        .iter()
+        .rev()
+        .find(|message| {
+            !mine
+                .iter()
+                .any(|own| crate::address::same(own, sender(message)))
+        })
+        .or(candidates.last())
+        .copied()
 }
 
 #[cfg(test)]

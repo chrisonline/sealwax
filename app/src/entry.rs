@@ -2,7 +2,7 @@
 //! second instance (`current_exe()`) is a whole Sealwax too.
 
 use crate::application::{self, AppConfig};
-use crate::{activation, cli, config};
+use crate::{activation, cli, config, webview};
 use gtk4::glib;
 use std::time::Instant;
 
@@ -36,6 +36,9 @@ pub fn main() -> glib::ExitCode {
             return glib::ExitCode::from(error.exit_code() as u8);
         }
     };
+    if parsed.unread {
+        return print_unread();
+    }
     let exit_after = match config::exit_after_from_env() {
         Ok(exit_after) => exit_after,
         Err(message) => {
@@ -43,14 +46,41 @@ pub fn main() -> glib::ExitCode {
             return glib::ExitCode::FAILURE;
         }
     };
+    // In a Flatpak WebKit gives each web process a sandbox of its own through the Flatpak
+    // portal, and starts them without one when it can't. Its check runs beside the start; mail
+    // waits for it (SECURITY.md, layer 8).
+    webview::start_flatpak_check();
     #[cfg(feature = "test-hooks")]
     if let Some(script) = parsed.self_test {
         return crate::selftest::run(&script, started);
     }
     let config = AppConfig::from_env(exit_after);
-    if !parsed.service {
+    // In a Flatpak the bus could start another Sealwax with the same id outside the sandbox
+    // (an installed package's service file), so the command line becomes the primary itself.
+    if !parsed.service && !sealwax_infrastructure::sandbox::is_flatpak() {
         let outcome = activation::prepare(&config.app_id);
         tracing::debug!(?outcome, "command line");
     }
     application::run(config, started)
+}
+
+/// `--unread`: the running Sealwax's number on stdout, or exit 1 when none runs.
+fn print_unread() -> glib::ExitCode {
+    let dirs = sealwax_infrastructure::xdg::SealwaxDirs::named(config::DIR_NAME);
+    let running = dirs.unread_file().and_then(|path| {
+        sealwax_infrastructure::unread::read_running(
+            &path,
+            !sealwax_infrastructure::sandbox::is_flatpak(),
+        )
+    });
+    match running {
+        Some(unread) => {
+            println!("{unread}");
+            glib::ExitCode::SUCCESS
+        }
+        None => {
+            eprintln!("Sealwax isn't running");
+            glib::ExitCode::FAILURE
+        }
+    }
 }
