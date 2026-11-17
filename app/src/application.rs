@@ -227,6 +227,7 @@ impl SealwaxApplication {
             store_warned: Cell::new(false),
             reader: RefCell::new(None),
             reader_shows: Cell::new(None),
+            reader_for_conversation: Cell::new(false),
             engine: EngineLink::new(),
             engine_service: RefCell::new(None),
             engine_events: RefCell::new(None),
@@ -306,6 +307,9 @@ pub struct AppState {
     reader: RefCell<Option<Reader>>,
     /// The message the reader shows; `None` while the window shows "No message selected".
     reader_shows: Cell<Option<MessageId>>,
+    /// The reader shows a conversation selected in Group by Conversation (issue #4), which
+    /// goes when no conversation is selected any more.
+    reader_for_conversation: Cell<bool>,
     /// The engine's commands and events (ADR-003); not connected until an engine is attached.
     engine: EngineLink,
     /// The engine this application started; the setup self-tests attach a fake one instead.
@@ -1308,17 +1312,23 @@ impl AppState {
         for (id, by) in [
             (ActionId::GroupBySender, GroupBy::Sender),
             (ActionId::GroupByDomain, GroupBy::Domain),
+            (ActionId::GroupByConversation, GroupBy::Conversation),
             (ActionId::DontGroup, GroupBy::None),
         ] {
+            // Toggles shown as one choice (the list's Group by menu ticks the one on): turning
+            // one on chooses it; turning the chosen one off leaves it chosen.
             let weak = Rc::downgrade(self);
-            win_actions.connect(id, move || {
-                if let Some(state) = weak.upgrade()
-                    && let Some(list) = state.list()
+            win_actions.connect_toggle(id, by == GroupBy::None, move |on| {
+                let Some(state) = weak.upgrade() else {
+                    return;
+                };
+                if let Some(list) = state.list()
+                    && on
                 {
                     list.set_group_by(by);
                     state.change_layout(|layout| layout.group_by = by);
-                    state.refresh_commands();
                 }
+                state.refresh_commands();
             });
         }
         self.win_actions.replace(Some(win_actions));
@@ -1418,6 +1428,24 @@ impl AppState {
             let Some(state) = weak.upgrade() else {
                 return;
             };
+            if let Some(list) = state.list()
+                && list.selected_conversation().is_some()
+            {
+                state.conversation_selected(&list);
+                return;
+            }
+            if state.reader_for_conversation.replace(false) && group.is_none() {
+                state.leave_opened(None);
+                if state.reader_shows.take().is_some()
+                    && let Some(reader) = state.reader()
+                {
+                    reader.clear();
+                    reader.set_position(None);
+                }
+                if let Some(shown) = state.window() {
+                    shown.clear_reader();
+                }
+            }
             if group.is_some() {
                 state.leave_opened(None);
                 if state.reader_shows.take().is_some()
@@ -1774,15 +1802,45 @@ impl AppState {
         }
     }
 
+    /// The reader shows the conversation selected in Group by Conversation (issue #4), as it
+    /// shows a selected message's: from the message it was given for the conversation, its
+    /// newest here. The same conversation selected again (its mail read again, new mail in it)
+    /// stays as it is shown.
+    fn conversation_selected(self: &Rc<Self>, list: &MessageList) {
+        let Some(id) = list.conversation_message() else {
+            return;
+        };
+        self.reader_for_conversation.set(true);
+        if self.reader_shows.get() != Some(id) {
+            self.leave_opened(Some(id));
+            if let (Some(reader), Some(window)) = (self.reader(), self.window()) {
+                if self.reader_shows.replace(Some(id)).is_none() {
+                    window.set_reader(&reader.widget());
+                }
+                reader.show_next(id);
+            }
+        }
+        self.update_position();
+        self.set_has_selection(true);
+        self.refresh_commands();
+    }
+
     /// A mail command on the selected group (issue #25): all of its mail in the view, read
-    /// again from the store, the selection then on the next group.
+    /// again from the store, the selection then on the next group. On a conversation (issue
+    /// #4), Star takes only its newest message here, as one would star the latest reply.
     pub(crate) fn group_command(self: &Rc<Self>, id: ActionId) {
         let Some(list) = self.list() else {
             return;
         };
+        let conversation = list.selected_conversation().is_some();
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
-            let targets = list.fresh_group_targets().await;
+            let targets = list.fresh_group_targets().await.map(|mut targets| {
+                if conversation && id == ActionId::Star {
+                    targets.truncate(1);
+                }
+                targets
+            });
             let Some(state) = weak.upgrade() else {
                 return;
             };
@@ -1791,7 +1849,14 @@ impl AppState {
                 Some(targets) if id == ActionId::MoveTo => state.pick_folder(targets),
                 Some(targets) => state.triage_targets(id, targets),
                 None => state.show_notice(
-                    &Notice::plain("The sender's mail didn't load; nothing changed".to_owned()),
+                    &Notice::plain(
+                        if conversation {
+                            "The conversation's mail didn't load; nothing changed"
+                        } else {
+                            "The sender's mail didn't load; nothing changed"
+                        }
+                        .to_owned(),
+                    ),
                     true,
                 ),
             }
@@ -1817,8 +1882,13 @@ impl AppState {
                 .1
                 .retain(|pending| targets.iter().all(|target| target.id != pending.id));
         }
+        let conversation = list.selected_conversation().is_some();
         advance(&list, &targets);
-        triage.queue(action, targets, Origin::User);
+        if conversation && !matches!(action, Triage::Star(_)) {
+            triage.queue_conversation(action, targets);
+        } else {
+            triage.queue(action, targets, Origin::User);
+        }
     }
 
     /// Move to…: the picker over the account's folders; insensitive across accounts.
@@ -1853,8 +1923,13 @@ impl AppState {
             return;
         };
         self.mark_started();
+        let conversation = list.selected_conversation().is_some();
         advance(&list, &targets);
-        triage.queue(Triage::MoveTo(folder), targets, Origin::User);
+        if conversation {
+            triage.queue_conversation(Triage::MoveTo(folder), targets);
+        } else {
+            triage.queue(Triage::MoveTo(folder), targets, Origin::User);
+        }
     }
 
     /// The folders Mark Folder as Read marks for what the list shows, and its name: a folder,
@@ -2036,9 +2111,14 @@ impl AppState {
         crate::pins::refresh(self, actions);
         actions.set_applies(ActionId::Label, crate::label_picker::applies(self).is_ok());
         let group_by = list.group_by();
-        actions.set_applies(ActionId::GroupBySender, group_by != GroupBy::Sender);
-        actions.set_applies(ActionId::GroupByDomain, group_by != GroupBy::Domain);
-        actions.set_applies(ActionId::DontGroup, group_by != GroupBy::None);
+        for (id, by) in [
+            (ActionId::GroupBySender, GroupBy::Sender),
+            (ActionId::GroupByDomain, GroupBy::Domain),
+            (ActionId::GroupByConversation, GroupBy::Conversation),
+            (ActionId::DontGroup, GroupBy::None),
+        ] {
+            actions.set_toggle_state(id, group_by == by);
+        }
     }
 
     /// Shows `notice` as a toast; with `replaces`, it takes the last action's toast's place
@@ -2287,6 +2367,7 @@ impl AppState {
             list.set_group_by(layout.group_by);
         }
         self.layout.replace(Some(layout));
+        self.refresh_commands();
         crate::saved_searches::show(self);
     }
 

@@ -9,6 +9,18 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **Messages open at once with GNOME's text scaling:** with a text scaling factor other than 100 %, Sealwax waited three seconds before showing each message, and made its body taller than its text. It now measures messages in the right unit.
 - **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
 
+## 1.5.2 — 2026-11-17
+
+Conversations as one row in the list.
+
+- **Group by Conversation** ([issue #4](https://github.com/PixDevsApps/sealwax/issues/4), thanks @ocewers): choose it in the new **Group by** menu at the end of the filter chips (the button with a list icon), where Group by Sender and Group by Domain are now too, or in the command palette. Each conversation takes one row, from its newest message: the sender, time, subject and preview, how many messages the conversation has, and whether anything in it is unread. Select a row to read the whole conversation. Archive, Delete, Move and Mark as Read act on the conversation's messages in the folder you're looking at (your replies stay in Sent), and the toast says so; Star marks the newest message. **Don't Group** goes back, and the choice is remembered.
+
+## 1.5.1 — 2026-11-16
+
+Mail sends through IONOS again.
+
+- **Sending through IONOS** ([issue #38](https://github.com/PixDevsApps/sealwax/issues/38), thanks @YenZi): messages from an IONOS mailbox (`smtp.ionos.de`) stayed in the outbox, retried every few minutes, and never went out. After the secure connection is made, Sealwax asks the server a second time which features it supports, to learn the largest message it takes; IONOS refuses the repeated question. Sealwax now carries on with what the server named the first time, and the login and the send go ahead. Only the size limit stays unknown for such a server, so a message that's too large is refused by the server when it's sent instead of in the composer.
+
 ## 1.5.0 — 2026-11-16
 
 Go to any folder, forward messages as attachments, save searches, see your unread mail in the bar, and sign with an HTML signature.

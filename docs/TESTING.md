@@ -77,6 +77,65 @@ Each milestone's exit criteria are the acceptance list. Results go here as dated
 
 ## Results
 
+### Group by Conversation (issue #4) — 2026-11-17
+
+This machine. Branch `feat/issue-4-conversations` on `508b646`: [issue #4](https://github.com/PixDevsApps/sealwax/issues/4), [ADR-016 amendment](DECISIONS.md#adr-016-amendment--group-by-conversation-one-list-row-per-conversation-2026-11-17).
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| Store tests (new) `a_view_grouped_by_conversation`, `a_conversation_is_pinned_by_its_newest_senders_pin` | Pass: rows from the newest message here, the conversation's size counting its copy in the Archive, unread here, newest first; the Unread, Starred and Attachments chips choose conversations and the row still counts all of them; a command's mail is the whole conversation here whatever the chip, never the Archive's; All Inboxes the same; a conversation's pin is its newest sender's (*until read* in its date, *always* first). The existing Group by and pin tests pass unchanged | Pass |
+| Unit tests (new) | The conversation row's screen-reader text; the toast's scope ("Moved 3 messages of the conversation to the Trash", "Marked 2 messages of the conversation as read"); the 5,000 line's text; `layout.toml` keeps `group_by = "conversation"`; `GroupBy` names round-trip | Pass |
+| Self-test `list-conversations` (new; `tools/headless.sh 37`) | 88 of 88 steps, three runs in a row before the key steps were added (74 of 74 each): two conversations from the six-message sample (five in the Inbox, the user's reply in Sent); the chips; selecting shows the conversation and marks its unread messages read; Next/Previous Message and `j`/`k` go from conversation to conversation; a reply arriving joins the shown conversation without showing it again; Star takes the newest message only; `e` archives the conversation's six Inbox messages with the toast "Archived 6 messages of the conversation", the next conversation shown, the reply left in Sent, Undo; a search shows messages; switching Group by both ways with a group selected leaves the reader empty; Don't Group. The step "`j` in the reader leaves the focus there" also passes with the focus moved unconditionally (GTK keeps it out of a list that doesn't have it), so it records the behaviour without guarding it | Pass |
+| Screenshots of the self-test (`.local/selftest/list-conversations*.png`), looked at | Conversation rows look like message rows: the dot and bold sender and subject on the unread one, the count box, the preview, the clip; the reader shows the conversation with "1 of 2" | Pass |
+| The 100,000-message fixture INBOX (`sealwax-fixtures import --count 100000 --seed 1` into `target/perf-groups`, 2 min 36 s) in the app, headless (an ad hoc script, not committed) | 20 of 20 steps: 5,000 conversation rows, the line "Only the newest 5,000 conversations are listed. Search to find older mail." shown, also under the Unread chip, gone in a search and after Don't Group; the reader's "3 of 5000" after two Next Message | Pass |
+| `sealwax-fixtures bench-groups --cold 3 --warm 20` (new, read-only), release, on that store, 07:50:48–07:51:19 UTC, load average 3.9 → 3.1, SQLite 3.50.6 | Warm p50 / p95, cold p50. **Conversation:** All (5,000 groups) 133.5 / 148.2 ms, 1,126.9 ms; Unread (5,000) 122.6 / 136.2 ms, 1,122.3 ms. **Sender:** All (1,428) 146.9 / 169.0 ms, 1,187.2 ms; Unread (1,423) 39.5 / 45.7 ms, 922.6 ms. **Domain:** All (1) 91.8 / 95.5 ms, 1,097.0 ms; Unread 27.7 / 31.6 ms, 901.7 ms. A run a minute earlier at load average 13.9 gave the same within 10 ms. On the store's reader thread, not the GTK thread | Pass (as Group by Sender, which shipped in 1.1) |
+| `bash tools/ci.sh --ui` on the branch's tree | Exit 0: 1,537 passed, 0 failed, 93 ignored; 97 self-test scripts, 9,335 of 9,335 steps (`list-conversations` 88 of 88, `list-senders` 130 of 130, `list-pinned` 169 of 169); hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`; MSRV, rustdoc and `cargo deny` included (`.local/ci-issue-4.log`) | Pass |
+| The Group by menu in the chip row (the owner's word, same day), in `list-conversations` (now 97 steps) and `list-senders` (130 of 130, its asserts now on the toggles' ticks) | A real click opens it with Don't Group ticked; `assert-accessible window` passes with it open; choosing Conversation ticks it and unticks the rest; choosing it again leaves it chosen. Screenshots looked at: the menu headed "Group by" with its four items, the button filled while grouped; the first version widened the list pane from 380 to 392 px (the theme's minimum button width), fixed with `min-width: 0` and smaller padding, back to 380 px | Pass |
+| `bash tools/ci.sh --ui` with the menu | Exit 0: 1,537 passed, 0 failed, 93 ignored; 97 self-test scripts, 9,344 of 9,344 steps (`list-conversations` 97 of 97, `a11y-window` 182 of 182); hostile suite clean (`.local/ci-issue-4-button.log`) | Pass |
+| `bash tools/ci.sh --testbed` | Not run | Not verified |
+| The owner's own try | Waiting | Not verified |
+
+### 1.5.1 — 2026-11-16
+
+This machine. The changes since 1.5.0: the package's `check()` tests the UI-model crate (`962a83f`); a server that refuses a second EHLO, IONOS's (`8f31d4f`, [issue #38](https://github.com/PixDevsApps/sealwax/issues/38), [ADR-007 amendment](DECISIONS.md#adr-007-amendment--a-server-that-refuses-a-second-ehlo-issue-38-2026-11-16)); the version commit, up to `v1.5.1` = `5a367a1`.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| IONOS's submission server, `smtp.ionos.de` 465 and 587 (STARTTLS), with a made-up login (`openssl s_client`, `EHLO [127.0.0.1]`) | The second EHLO answered `503 Bad sequence of commands`; AUTH then evaluated on the same connection (`535`), as after a single EHLO | Pass |
+| The engine's `submission_limit` and `Submitter::connect` against `smtp.ionos.de` (a scratch example, not committed; the made-up login) | Before `8f31d4f`: `Connect(Other)`, Retry, on both ports. After: the limit `None`, connect `Auth(WrongPassword)` on both ports (AUTH reached) | Pass |
+| The new tests against the scripted server | An IONOS-like server takes the message without `SIZE=` and gives no limit (both fail on the old code); a `421` to the second EHLO is still retried, without AUTH | Pass |
+| `bash tools/ci.sh --ui` on `5a367a1` | Exit 0: 1,533 passed, 0 failed, 93 ignored; 96 self-test scripts, 9,247 of 9,247 steps; hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`; MSRV, rustdoc and `cargo deny` included | Pass |
+| `bash tools/ci.sh --testbed` | Not run | Not verified |
+| The push range (`89a1a73..5a367a1`, 3 commits) scanned | No working doc, home path, hostname or personal data | Pass |
+| `appstreamcli validate` on the metainfo; `tools/flatpak-cargo-sources.py --check` | Valid (one pedantic note); up to date | Pass |
+| `python3 tools/release.py build` on `v1.5.1` | `check()` 1,243 passed, 0 failed, 93 ignored (the UI-model crate's tests now included); no compiler warning; `SHA256SUMS` checks for all four files; the binary says 1.5.1 and holds no home path, user name, hostname or self-test code (its one `gmail.com` is a provider domain); package SHA-256 `cec3fc421a8d2b63e410222ccb073e5902971ef9bfa2da719c55c0d95b98b87a` | Pass |
+| The clean-container install test (`sealwax-selftest` from `5a367a1`) | `install-smoke` 16 of 16 steps in a fresh `archlinux:base` container with its SQLite 3.54.1, the web process in WebKit's sandbox (`.local/install-test/20261116-214048`) | Pass |
+| `python3 tools/flatpak.py build` on `v1.5.1` (flatpak-builder 1.4.12) | Exit 0; metainfo and desktop file valid; `/app/bin/sealwax` 24,453,904 bytes | Pass |
+| `tools/flatpak.py site`: the signed repository | Commit `e1efbba9…` on 1.5.0's `d45e0860…`, signed by the repository key (`C3A84406A8A78141`) | Pass |
+| The release [v1.5.1](https://github.com/PixDevsApps/sealwax/releases/tag/v1.5.1) (`tools/release.py github`) | GitHub's latest; six files, the `.flatpakref` among them; `releases/latest/download/` gives the same bytes as the build for the package and as the repository for the `.flatpakref` | Pass |
+| The Flatpak repository (`tools/flatpak.py publish`), read from the real address in a separate Flatpak installation | `flatpak remote-info` gives commit `e1efbba9…` with parent `d45e0860…`, on the third try (15 s apart) after the push | Pass |
+| A real send through IONOS | No account here; asked of the reporter on #38 | Not verified |
+
+### 1.5.0 — 2026-11-16
+
+This machine. The changes since 1.4.2: the architecture review's phase 3, domain value types and the `sealwax-ui-model` crate (`1a79615..0ef9356`, [ADR-026](DECISIONS.md#adr-026--domain-value-types-one-rule-in-one-place-2026-11-04)); Go to Folder…, Forward as Attachment, saved searches, the unread count with `sealwax --unread` and the Omarchy bar widget, and HTML signatures from files (`360bf4f`); the Signature… form and the designed signature (`5a097a1`, [ADR-029](DECISIONS.md#adr-029--150-the-unread-count-as-a-file-saved-searches-with-the-layout-html-signatures-from-files-2026-11-16)); the version commit, up to `v1.5.0` = `9f431f7`.
+
+| Check | Result | Verdict |
+| --- | --- | --- |
+| `bash tools/ci.sh --ui` on `9f431f7` | Exit 0: 1,530 passed, 0 failed, 93 ignored; 96 self-test scripts, 9,247 of 9,247 steps (new: `saved-searches`, `signature-form`; Go to Folder… in `triage-keys`, Forward as Attachment in `reply-commands`); hostile suite `production_failures=[] cases=60 dns=production=0 control=11 glib_criticals=0`; MSRV, rustdoc and `cargo deny` included | Pass |
+| `bash tools/ci.sh --testbed` | Not run | Not verified |
+| The push range (`07cd06f..9f431f7`, 9 commits) scanned | No working doc or reference to one, no home path, hostname or personal data beyond the usual commit author; the only `gmail.com` matches are Google's provider hosts in the code | Pass |
+| `appstreamcli validate --no-net` on the metainfo; `tools/flatpak-cargo-sources.py --check` | Valid (one pedantic note); up to date (the lock gained only `serde_json` for the infrastructure crate) | Pass |
+| `python3 tools/release.py build` on `v1.5.0` | `check()` 1,115 passed, 0 failed, 93 ignored: the PKGBUILD's `check()` doesn't test the new `sealwax-ui-model` crate (its tests ran in CI above), hence fewer than 1.4.2's 1,214; no compiler warning in the build log; `SHA256SUMS` checks for all four files; the binary says 1.5.0 and holds no home path, user name or self-test code; package SHA-256 `c425a275b3d72ba18678c0b92d5733367c7ad8e0a48d84e63d6516563225796f` | Pass |
+| The clean-container install test (`sealwax-selftest` from `9f431f7`) | `install-smoke` 16 of 16 steps in a fresh `archlinux:base` container with its SQLite 3.54.1, the web process in WebKit's sandbox (`.local/install-test/20261116-130758`) | Pass |
+| `python3 tools/flatpak.py build` on `v1.5.0` (flatpak-builder 1.4.12) | Exit 0; metainfo and desktop file valid, the 1.5.0 release present; `/app/bin/sealwax` 24,453,504 bytes | Pass |
+| `tools/flatpak.py site`: the signed repository | Commit `d45e0860…` on 1.4.2's `1870b1e5…`, signed by the repository key (`C3A84406A8A78141`) | Pass |
+| The release [v1.5.0](https://github.com/PixDevsApps/sealwax/releases/tag/v1.5.0) (`tools/release.py github`) | GitHub's latest; six files, the `.flatpakref` among them; `releases/latest/download/` gives the same bytes as the build for the package and as the repository for the `.flatpakref` | Pass |
+| The Flatpak repository (`tools/flatpak.py publish`), read from the real address in a separate Flatpak installation | `flatpak remote-info` gives commit `d45e0860…` with parent `1870b1e5…`, about a minute after the push | Pass |
+| An HTML signature in a composer window, sent to webmail | The owner, before the release, on this machine with their own account and the release build of `360bf4f` and `5a097a1`: a hand-written file and then the form's designed signature shown as intended ("That's perfect!"); a message sent to webmail not reported here | Partly verified |
+| The Omarchy bar widget in a running omarchy-shell | Not run | Not verified |
+| An install and update of the Flatpak from the real address | Not run this time | Not verified |
+
 ### 1.4.2 — 2026-11-16
 
 This machine. The changes since 1.4.1: `rusqlite` 0.43.0 with `libsqlite3-sys` 0.40.0 and SQLite 3.45.3 or later (`8ac453e`, [ADR-005 amendment](DECISIONS.md#adr-005-amendment--rusqlite-043-sqlite-3453-or-later-2026-11-15)); `ammonia` 4.1.9 and SECURITY.md's advisory list (`4f6269a`); search keywords, the product page as homepage and "email client for Linux" (`43f8ac1`, [ADR-028 amendment](DECISIONS.md#adr-028-amendment--the-homepage-is-the-product-page-2026-11-15)); the version commit, up to `v1.4.2` = `0ae141c`.
