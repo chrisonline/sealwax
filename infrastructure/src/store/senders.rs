@@ -45,6 +45,9 @@ pub struct SenderGroup {
     /// The store put the group first, among the pinned ones (issue #26): in an Inbox or All
     /// Inboxes, an *always* pin's group, or an *until read* pin's while it has unread mail.
     pub leads: bool,
+    /// A conversation's labels: those of its messages here (`views::labels_sql`), sorted, each
+    /// once. Senders and domains have none.
+    pub labels: Vec<String>,
 }
 
 impl std::fmt::Debug for SenderGroup {
@@ -58,6 +61,7 @@ impl std::fmt::Debug for SenderGroup {
             .field("attachments", &self.attachments)
             .field("pinned", &self.pinned)
             .field("leads", &self.leads)
+            .field("labels", &self.labels.len())
             .finish_non_exhaustive()
     }
 }
@@ -316,6 +320,7 @@ fn group_row(row: &rusqlite::Row<'_>, key: String) -> rusqlite::Result<SenderGro
         snippet: row.get(10)?,
         starred: row.get(11)?,
         attachments: row.get(12)?,
+        labels: Vec::new(),
     })
 }
 
@@ -330,6 +335,7 @@ fn conversations(
     ids: &str,
 ) -> Result<Vec<SenderGroup>, StoreError> {
     let pin = pin_sql(GroupBy::Conversation);
+    let labels = views::labels_sql!();
     let pinnable = pins::pinnable(conn, spec.scope)?;
     let having = match spec.filter {
         ViewFilter::All => "",
@@ -342,7 +348,9 @@ fn conversations(
         "SELECT k, max(n, coalesce((SELECT message_count FROM threads WHERE id = k), 0)), \
            unread, latest, from_name, from_addr, subject, pin, \
            ?1 AND (pin = 1 OR (pin = 0 AND unread > 0)) AS leads, \
-           id, snippet, starred, attachments \
+           id, snippet, starred, attachments, \
+           (SELECT group_concat({labels}, char(31)) FROM messages m \
+             WHERE m.thread_id = k AND m.folder_id IN ({ids}) AND m.flags & 264 = 0) \
          FROM (SELECT thread_id AS k, count(*) AS n, sum(flags & 1 = 0) AS unread, \
                  max(date) AS latest, from_name, from_addr, subject, \
                  coalesce({pin}, -1) AS pin, id, snippet, \
@@ -357,7 +365,9 @@ fn conversations(
         .prepare(&sql)?
         .query_map([pinnable], |row| {
             let key: i64 = row.get(0)?;
-            group_row(row, key.to_string())
+            let mut group = group_row(row, key.to_string())?;
+            group.labels = views::labels(row.get(13)?);
+            Ok(group)
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(groups)

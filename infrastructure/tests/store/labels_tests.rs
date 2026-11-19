@@ -419,3 +419,58 @@ fn a_label_change_leaves_alone_what_it_cant_label() {
     let queued = label(&store, &[row], theirs[1], true);
     assert_eq!(queued.not_applied, [(NotApplied::NoTarget, 1)]);
 }
+
+/// Group by Conversation (issue #4): a conversation's row carries the labels of its messages
+/// here, as their own rows do: each once, sorted.
+#[test]
+fn a_conversation_row_carries_the_labels_of_its_messages() {
+    use sealwax_domain::senders::GroupBy;
+    let (_dir, store) = open();
+    let ada = account(&store, "Ada");
+    let ids = folders(
+        &store,
+        ada,
+        &[
+            ("INBOX", FolderRole::Inbox),
+            ("Labels", FolderRole::Other),
+            ("Labels/Work", FolderRole::Other),
+            ("Labels/Reise", FolderRole::Other),
+        ],
+    );
+    let (inbox, work, reise) = (ids[0], ids[2], ids[3]);
+    arrive(&store, inbox, message(inbox, 1, Some("a@example.test")));
+    let mut reply = message(inbox, 2, Some("b@example.test"));
+    reply.headers.in_reply_to = vec!["a@example.test".into()];
+    reply.headers.references = vec!["a@example.test".into()];
+    arrive(&store, inbox, reply);
+    arrive(&store, inbox, message(inbox, 3, Some("c@example.test")));
+    arrive(&store, work, message(work, 1, Some("a@example.test")));
+    arrive(&store, work, message(work, 2, Some("b@example.test")));
+    arrive(&store, reise, message(reise, 1, Some("a@example.test")));
+
+    let groups = store
+        .sender_groups(ViewSpec::folder(inbox), GroupBy::Conversation)
+        .recv_blocking()
+        .unwrap();
+    let shown: Vec<(String, u32, Vec<String>)> = groups
+        .into_iter()
+        .map(|group| (group.subject, group.count, group.labels))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            ("Message 3".to_owned(), 1, Vec::new()),
+            (
+                "Message 2".to_owned(),
+                2,
+                vec!["Reise".to_owned(), "Work".to_owned()]
+            ),
+        ]
+    );
+    // Group by Sender has no labels.
+    let senders = store
+        .sender_groups(ViewSpec::folder(inbox), GroupBy::Sender)
+        .recv_blocking()
+        .unwrap();
+    assert!(senders.iter().all(|group| group.labels.is_empty()));
+}

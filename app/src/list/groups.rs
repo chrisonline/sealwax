@@ -742,6 +742,11 @@ fn conversation_row() -> gtk::Box {
     top.append(&count);
     top.append(&time);
     let subject = line("sw-subject");
+    // As a message row's: the label chips after the subject, hidden without any.
+    let labels = gtk::Box::builder().spacing(4).visible(false).build();
+    let subject_line = gtk::Box::builder().spacing(6).build();
+    subject_line.append(&subject);
+    subject_line.append(&labels);
     let snippet = gtk::Label::builder()
         .xalign(0.0)
         .yalign(0.0)
@@ -758,7 +763,7 @@ fn conversation_row() -> gtk::Box {
         .hexpand(true)
         .build();
     content.append(&top);
-    content.append(&subject);
+    content.append(&subject_line);
     content.append(&snippet);
     let star = gtk::Image::builder()
         .icon_name("starred-symbolic")
@@ -797,6 +802,7 @@ struct ConversationParts {
     count: gtk::Label,
     time: gtk::Label,
     subject: gtk::Label,
+    labels: gtk::Box,
     snippet: gtk::Label,
     star: gtk::Widget,
     clip: gtk::Widget,
@@ -808,8 +814,10 @@ fn conversation_parts(row: &gtk::Box) -> Option<ConversationParts> {
     let content = avatar.next_sibling()?;
     let indicators = content.next_sibling()?;
     let top = content.first_child()?;
-    let subject = top.next_sibling()?;
-    let snippet = subject.next_sibling()?;
+    let subject_line = top.next_sibling()?;
+    let snippet = subject_line.next_sibling()?;
+    let subject = subject_line.first_child()?;
+    let labels = subject.next_sibling()?;
     let sender = top.first_child()?;
     let pin = sender.next_sibling()?;
     let count = pin.next_sibling()?;
@@ -824,11 +832,15 @@ fn conversation_parts(row: &gtk::Box) -> Option<ConversationParts> {
         count: count.downcast().ok()?,
         time: time.downcast().ok()?,
         subject: subject.downcast().ok()?,
+        labels: labels.downcast().ok()?,
         snippet: snippet.downcast().ok()?,
         star,
         clip,
     })
 }
+
+/// The most label chips a conversation row shows, as a message row (`row::ROW_LABELS`).
+const CONVERSATION_LABELS: usize = 3;
 
 const TINTS: [&str; 7] = [
     "sw-avatar-tint-0",
@@ -876,6 +888,7 @@ fn bind_conversation(list_item: &gtk::ListItem, row: &gtk::Box, group: &SenderGr
     } else {
         &group.subject
     });
+    crate::labels::fill(&parts.labels, &group.labels, CONVERSATION_LABELS);
     parts.snippet.set_text(&group.snippet);
     shown(&parts.star, group.starred);
     shown(&parts.clip, group.attachments);
@@ -908,6 +921,10 @@ fn conversation_text(group: &SenderGroup, time: &str) -> String {
     }
     if group.attachments {
         text.push_str(", has attachments");
+    }
+    if !group.labels.is_empty() {
+        text.push_str(", labels ");
+        text.push_str(&group.labels.join(", "));
     }
     text
 }
@@ -1039,6 +1056,7 @@ mod tests {
             attachments: false,
             pinned: leads,
             leads,
+            labels: Vec::new(),
         }
     }
 
