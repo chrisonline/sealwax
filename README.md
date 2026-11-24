@@ -22,10 +22,10 @@ flatpak install --user https://github.com/PixDevsApps/sealwax/releases/latest/do
 
 It updates with `flatpak update` or your software centre. On Omarchy, the package above is the better fit.
 
-**Your unread count in Omarchy's bar** (optional): this line adds a Sealwax icon to the bar, with the number of unread messages beside it while Sealwax runs. It asks where in the bar to put it: left, center (beside the clock, the default) or right. A click opens Sealwax.
+**Your unread count in Omarchy's bar** (optional): this line adds a Sealwax icon to the bar, with the number of unread messages in your Inboxes and folders beside it while Sealwax runs. It asks where in the bar to put it: left, center (beside the clock, the default) or right. A click lists the folders with unread mail; a click on one opens Sealwax there.
 
 ```sh
-s=$(gum choose --header "Where in the bar?" --selected center left center right) && d=~/.config/omarchy/plugins/io.github.pixdevsapps.sealwax-unread && mkdir -p "$d" && for f in manifest.json BarWidget.qml; do curl -fsSL -o "$d/$f" https://raw.githubusercontent.com/PixDevsApps/sealwax/main/contrib/omarchy-plugin/$f; done && omarchy-shell shell rescanPlugins && omarchy plugin enable io.github.pixdevsapps.sealwax-unread --section "${s/center/centerEnd}"
+s=$(gum choose --header "Where in the bar?" --selected center left center right) && d=~/.config/omarchy/plugins/io.github.pixdevsapps.sealwax-unread && mkdir -p "$d" && for f in manifest.json BarWidget.qml; do curl -fsSL -o "$d/$f" https://raw.githubusercontent.com/PixDevsApps/sealwax/main/contrib/omarchy-plugin/$f; done && omarchy-shell shell rescanPlugins && { for i in {1..50}; do omarchy plugin list --json | grep -q '"io.github.pixdevsapps.sealwax-unread"' && break; sleep 0.1; done; omarchy plugin enable io.github.pixdevsapps.sealwax-unread --section "${s/center/centerEnd}"; }
 ```
 
 To take it off again: `omarchy plugin remove io.github.pixdevsapps.sealwax-unread`. [INSTALL.md](INSTALL.md#unread-count-in-omarchys-bar-optional) has the details.
@@ -36,7 +36,7 @@ To take it off again: `omarchy plugin remove io.github.pixdevsapps.sealwax-unrea
 
 ## Status
 
-**Version 1.5.2.** The features below are built and tested, and its author has read their own mail with it every day since 7 October 2026: Outlook.com, Microsoft 365 and IMAP, Gmail among them. Testing also covers local test mail servers (Dovecot, Stalwart, Mailpit), a fresh install in a clean Arch Linux container, and measurements on a live desktop; other providers are welcome to report how it goes. The [1.0 release notes](docs/RELEASE_NOTES.md) say what was checked and what wasn't.
+**Version 1.6.4.** The features below are built and tested, and its author has read their own mail with it every day since 7 October 2026: Outlook.com, Microsoft 365 and IMAP, Gmail among them. Testing also covers local test mail servers (Dovecot, Stalwart, Mailpit), a fresh install in a clean Arch Linux container, and measurements on a live desktop; other providers are welcome to report how it goes. The [1.0 release notes](docs/RELEASE_NOTES.md) say what was checked and what wasn't.
 
 ## Features
 
@@ -53,7 +53,7 @@ To take it off again: `omarchy plugin remove io.github.pixdevsapps.sealwax-unrea
 - **Keyboard first:** one-key shortcuts in the list and reader, a command palette (F1), and your own keys in `keys.toml`. Settings live in plain files: `config.toml`, `keys.toml`, `accounts.toml`.
 - **Private:** passwords and tokens only in your keyring; no telemetry; logs without mail content; outgoing mail without your computer's name or a Bcc header.
 
-**Gmail** works with an app password, as [this step-by-step guide](docs/GMAIL.md) shows; there is no Sign in with Google. Not in 1.0: server-side search, rules uploaded to the server (ManageSieve), PGP and S/MIME, calendars and contacts beyond autocomplete ([release notes](docs/RELEASE_NOTES.md#known-limitations)).
+**Gmail** works with an app password, as [this step-by-step guide](docs/GMAIL.md) shows; there is no Sign in with Google. PGP mail is read and sent with your own GnuPG: decrypted and its signatures checked, signed and encrypted on send. Not yet: server-side search, rules uploaded to the server (ManageSieve), S/MIME, calendars and contacts beyond autocomplete ([release notes](docs/RELEASE_NOTES.md#known-limitations)).
 
 ## Requirements
 
@@ -74,5 +74,7 @@ The package: Omarchy, or Arch Linux, on x86_64, with GTK 4.18+, libadwaita 1.9+,
 ## Thanks
 
 Thanks to everyone who reports bugs and suggests improvements in the [issues](https://github.com/PixDevsApps/sealwax/issues), and especially to [@ocewers](https://github.com/ocewers) for detailed reports and ideas (issues #2 to #8), to [@hurricaane](https://github.com/hurricaane) and [@biddster](https://github.com/biddster) for the ideas behind 1.1 (issues #14, #24, #25 and #26), and to [@alauppe](https://github.com/alauppe), [@chrisonline](https://github.com/chrisonline) and [@mlamoure](https://github.com/mlamoure) for their fixes (pull requests #19, #28 and #33), and to [@lama7](https://github.com/lama7) for Empty Trash (pull request #35).
+
+**Support Sealwax:** Sealwax is free and made by one person in Norway. If it saves you time, you can [sponsor its work on GitHub](https://github.com/sponsors/PixDevsApps), monthly or once.
 
 License: MIT. The licenses of the crates Sealwax is built from come with the package, in `/usr/share/licenses/sealwax/THIRD-PARTY-LICENSES.txt`.

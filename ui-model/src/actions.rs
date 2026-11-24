@@ -249,6 +249,15 @@ pub enum ActionId {
     Print,
     ShowOriginal,
     SaveMessage,
+    OpenWith1,
+    OpenWith2,
+    OpenWith3,
+    OpenWith4,
+    OpenWith5,
+    OpenWith6,
+    OpenWith7,
+    OpenWith8,
+    OpenWith9,
     Unsubscribe,
     PinSender,
     PinDomain,
@@ -264,6 +273,9 @@ pub enum ActionId {
     QuickReply,
     ReplyInComposer,
     AttachFile,
+    SignMessage,
+    EncryptMessage,
+    AttachPublicKey,
     ShowCcBcc,
     DiscardDraft,
     CloseComposer,
@@ -318,7 +330,7 @@ pub enum ActionId {
 }
 
 impl ActionId {
-    pub const ALL: [Self; 111] = [
+    pub const ALL: [Self; 123] = [
         Self::NextMessage,
         Self::PreviousMessage,
         Self::NextInConversation,
@@ -364,6 +376,15 @@ impl ActionId {
         Self::Print,
         Self::ShowOriginal,
         Self::SaveMessage,
+        Self::OpenWith1,
+        Self::OpenWith2,
+        Self::OpenWith3,
+        Self::OpenWith4,
+        Self::OpenWith5,
+        Self::OpenWith6,
+        Self::OpenWith7,
+        Self::OpenWith8,
+        Self::OpenWith9,
         Self::Unsubscribe,
         Self::PinSender,
         Self::PinDomain,
@@ -379,6 +400,9 @@ impl ActionId {
         Self::QuickReply,
         Self::ReplyInComposer,
         Self::AttachFile,
+        Self::SignMessage,
+        Self::EncryptMessage,
+        Self::AttachPublicKey,
         Self::ShowCcBcc,
         Self::DiscardDraft,
         Self::CloseComposer,
@@ -444,6 +468,40 @@ impl ActionId {
             7 => Self::GoToAccount7,
             8 => Self::GoToAccount8,
             9 => Self::GoToAccount9,
+            _ => return None,
+        })
+    }
+
+    /// Open With entry `number` (1 to [`sealwax_domain::open_with::MAX_ENTRIES`]): the
+    /// `[[open_with]]` in that place in `config.toml`.
+    pub const fn open_with(number: usize) -> Option<Self> {
+        Some(match number {
+            1 => Self::OpenWith1,
+            2 => Self::OpenWith2,
+            3 => Self::OpenWith3,
+            4 => Self::OpenWith4,
+            5 => Self::OpenWith5,
+            6 => Self::OpenWith6,
+            7 => Self::OpenWith7,
+            8 => Self::OpenWith8,
+            9 => Self::OpenWith9,
+            _ => return None,
+        })
+    }
+
+    /// Which Open With entry this is (1 to [`sealwax_domain::open_with::MAX_ENTRIES`]), if
+    /// it is one.
+    pub const fn open_with_number(self) -> Option<usize> {
+        Some(match self {
+            Self::OpenWith1 => 1,
+            Self::OpenWith2 => 2,
+            Self::OpenWith3 => 3,
+            Self::OpenWith4 => 4,
+            Self::OpenWith5 => 5,
+            Self::OpenWith6 => 6,
+            Self::OpenWith7 => 7,
+            Self::OpenWith8 => 8,
+            Self::OpenWith9 => 9,
             _ => return None,
         })
     }
@@ -644,6 +702,18 @@ impl ActionId {
             Self::SaveMessage => {
                 on_selection("save-message", "Save as .eml…", Messages, &["<Control>s"])
             }
+            // Hands the message's original to a command from `config.toml`'s `[[open_with]]`
+            // (issue #39, ADR-031): one action per entry, in the file's order, titled "Open With"
+            // and the entry's name where it is shown. No default keys (ADR-017).
+            Self::OpenWith1 => on_selection("open-with-1", "Open With 1", Messages, &[]),
+            Self::OpenWith2 => on_selection("open-with-2", "Open With 2", Messages, &[]),
+            Self::OpenWith3 => on_selection("open-with-3", "Open With 3", Messages, &[]),
+            Self::OpenWith4 => on_selection("open-with-4", "Open With 4", Messages, &[]),
+            Self::OpenWith5 => on_selection("open-with-5", "Open With 5", Messages, &[]),
+            Self::OpenWith6 => on_selection("open-with-6", "Open With 6", Messages, &[]),
+            Self::OpenWith7 => on_selection("open-with-7", "Open With 7", Messages, &[]),
+            Self::OpenWith8 => on_selection("open-with-8", "Open With 8", Messages, &[]),
+            Self::OpenWith9 => on_selection("open-with-9", "Open With 9", Messages, &[]),
             Self::Compose => command(
                 "compose",
                 "Compose",
@@ -696,6 +766,29 @@ impl ActionId {
             Self::AttachFile => {
                 command("attach-file", "Attach File…", Compose, Scope::Composer, &[])
             }
+            // PGP on send (#32, ADR-032): no default keys (the owner's answer, 2026-11-18);
+            // keys.toml can give them one.
+            Self::SignMessage => command(
+                "sign-message",
+                "Sign Message",
+                Compose,
+                Scope::Composer,
+                &[],
+            ),
+            Self::EncryptMessage => command(
+                "encrypt-message",
+                "Encrypt Message",
+                Compose,
+                Scope::Composer,
+                &[],
+            ),
+            Self::AttachPublicKey => command(
+                "attach-public-key",
+                "Attach My Public Key",
+                Compose,
+                Scope::Composer,
+                &[],
+            ),
             Self::ShowCcBcc => command(
                 "show-cc-bcc",
                 "Add Cc and Bcc",
@@ -1322,6 +1415,15 @@ mod tests {
                 ActionId::Print,
                 ActionId::ShowOriginal,
                 ActionId::SaveMessage,
+                ActionId::OpenWith1,
+                ActionId::OpenWith2,
+                ActionId::OpenWith3,
+                ActionId::OpenWith4,
+                ActionId::OpenWith5,
+                ActionId::OpenWith6,
+                ActionId::OpenWith7,
+                ActionId::OpenWith8,
+                ActionId::OpenWith9,
                 ActionId::Unsubscribe,
                 ActionId::PinSender,
                 ActionId::PinDomain,
@@ -1340,6 +1442,22 @@ mod tests {
         for id in needs {
             assert_eq!(id.scope(), Scope::List, "{id:?}");
         }
+    }
+
+    #[test]
+    fn one_open_with_command_per_entry_without_keys() {
+        let max = sealwax_domain::open_with::MAX_ENTRIES;
+        for number in 1..=max {
+            let id = ActionId::open_with(number).unwrap();
+            assert_eq!(id.open_with_number(), Some(number));
+            assert_eq!(id.name(), format!("open-with-{number}"));
+            assert!(id.spec().keys.is_empty(), "{id:?}");
+            assert!(id.spec().palette, "{id:?}");
+            assert_eq!(id.spec().menu, None);
+        }
+        assert_eq!(ActionId::open_with(0), None);
+        assert_eq!(ActionId::open_with(max + 1), None);
+        assert_eq!(ActionId::SaveMessage.open_with_number(), None);
     }
 
     /// DESIGN.md's keymap table (2026-10-04), plus the keys this registry adds to it.

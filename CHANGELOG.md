@@ -9,6 +9,46 @@ Each release, newest first, in plain words. [INSTALL.md](INSTALL.md) says how to
 - **Messages open at once with GNOME's text scaling:** with a text scaling factor other than 100 %, Sealwax waited three seconds before showing each message, and made its body taller than its text. It now measures messages in the right unit.
 - **A new icon:** a green envelope on a navy tile, drawn as vectors, so it stays sharp at every size, in the dock, the launcher and the notifications.
 
+## 1.6.4 — 2026-11-23
+
+You can choose the account a new message from All Inboxes starts from.
+
+- **Choose the account a new message from All Inboxes starts from** ([issue #43](https://github.com/PixDevsApps/sealwax/issues/43), thanks @ocewers): set `default_account` under `[compose]` in `config.toml` to an account's `key` from `accounts.toml`, and New Message in All Inboxes is written from that account and its signature, whichever message is selected, or none. You can still change From in the message. Replies, forwards and new messages from one account's folder keep the account they have; without the setting, All Inboxes still uses the selected message's account.
+
+## 1.6.3 — 2026-11-21
+
+The bar counts the unread mail in your folders, and a click shows where it is.
+
+- **The bar counts the unread mail in your folders, and shows where it is:** the number in Omarchy's bar now takes in the folders under your Inboxes and your own folders, not only the Inboxes, so mail your server files into a folder is counted too; Sent, Drafts, Archive, Junk and Trash are left out. A click on the icon lists each folder with unread mail and how many, by account, and a click on a folder opens Sealwax on it; a right click opens Sealwax. To get the list, run the widget's install line again ([INSTALL.md](INSTALL.md#unread-count-in-omarchys-bar-optional)); the widget you have shows the new number without it. `sealwax --unread` counts the same way, and `sealwax --folder` opens a folder for scripts.
+
+## 1.6.2 — 2026-11-19
+
+Files dragged onto the composer are attached again on Hyprland.
+
+- **Files dragged onto the composer are attached again on Hyprland** ([issue #42](https://github.com/PixDevsApps/sealwax/issues/42), thanks @ocewers): a file dragged from Nautilus or another file manager was turned down by the composer, and over the message's text it went in as its `file://` address. Hyprland up to 0.57.2 offers such a drop only as a move, and the composer took only copies; it now takes both, and the file is always copied, never moved. Images dropped over the text still go into the message itself.
+
+## 1.6.1 — 2026-11-18
+
+Send signed and encrypted mail with your own GnuPG, and two fixes to how PGP signatures are checked.
+
+- **Send signed and encrypted mail** ([issue #32](https://github.com/PixDevsApps/sealwax/issues/32), thanks @mlamoure, who also answered how it should work): **Sign** and **Encrypt** in the composer, with your own GnuPG keyring and gpg-agent, as PGP/MIME. Encrypt needs a key in your keyring for every recipient and never falls back to plain text; unverified keys are used and named under the fields, a verified key is preferred, and when someone has several unverified keys you pick one. Bcc recipients' keys aren't named on the message, and your own key is added so you can read your Sent copy. While Encrypt is on, the draft stays on your computer, not in the server's Drafts folder. A reply to an encrypted message starts encrypted; `pgp_sign`, `pgp_encrypt` and `pgp_key` in `accounts.toml` set an account's defaults and its signing key. **Attach My Public Key** attaches your key. The Subject stays readable. Not in the Flatpak, which can't reach your keyring.
+- **Two fixes to PGP signature checking** ([issue #32](https://github.com/PixDevsApps/sealwax/issues/32), thanks @mlamoure, who found and reported both): "Signed by NAME · checked" could appear for a user ID that nobody certified, when someone added it to a key you had certified for its own user ID; now the user ID with the sender's address must itself be valid in your keyring, otherwise the line says "key not verified". And text written around a clear-signed block was shown under the signature line as if it were signed; now only the text GnuPG checked is shown there, and a line says "Text outside the signed part isn't shown" (Show Original has the whole message). The same line appears when an inline encrypted message had text around it. GnuPG's status lines now come through a pipe of their own, apart from its log.
+
+## 1.6.0 — 2026-11-18
+
+Read PGP mail with your own GnuPG, open attached emails in the reader, and hand a message to a program of your own.
+
+- **PGP mail** ([issue #32](https://github.com/PixDevsApps/sealwax/issues/32), thanks @mlamoure): encrypted messages are decrypted when you open them, with your GnuPG keyring and gpg-agent, so your keys stay where they are (hardware keys too) and passphrases go through pinentry; Sealwax keeps no keys. The decrypted text is never saved, searched or quoted in a reply, and its attachments open and save as usual. Signatures are checked: "Signed by NAME · checked" only when the signature is good, your keyring vouches for the key and it is the sender's; otherwise the line says what's missing, and warns when the message may have been changed. Needs GnuPG installed; the Flatpak can't reach your keyring and reads no PGP. Sending signed or encrypted mail comes in a later release.
+- **Attached emails open in the reader** ([issue #40](https://github.com/PixDevsApps/sealwax/issues/40), thanks @neuromante): **Open** on an attached `.eml` (a message forwarded as an attachment, or the `postacert.eml` of an Italian certified email, PEC) shows it in Sealwax, with its own attachments, under a bar with **Back**; Escape goes back too. It's shown as safely as any message: no scripts, remote images held back.
+- **Open With** ([issue #39](https://github.com/PixDevsApps/sealwax/issues/39), thanks @neuromante): hand the message you're reading to a program of your own, such as a document archive, a script that files the message, or an assistant that summarises it. List each program in `config.toml` as an `[[open_with]]` table with a `name` and a `command`, where `"{file}"` stands for the message's file; **Open With** and the name then appear in the reader's **More** menu and in the palette. The program gets a copy of the message exactly as the server has it, the same file Save as .eml saves, readable by you alone; Sealwax starts it directly, without a shell, and empties the folder the copies are in when it next starts. Nothing is shown until you add one. Not in the Flatpak, whose sandbox can't start programs on your system. The user guide has an example.
+
+## 1.5.3 — 2026-11-17
+
+A security release: lettre 0.11.24, and a stricter check of the server's answer to a sent message.
+
+- **lettre 0.11.24, the library Sealwax sends mail with**, out on 17 November with security fixes. Sealwax had carried its own copy of lettre since 0.4.7 to read the long replies Microsoft 365 sends and, since 1.0.3, to hold a server's reply to a bounded size and time; those fixes are now lettre's own, one of them from Sealwax's report ([GHSA-pmvc-x69f-5p9f](https://github.com/lettre/lettre/security/advisories/GHSA-pmvc-x69f-5p9f)), so the copy is gone. Of lettre's other fixes, one reached Sealwax: a line of only spaces in the server's list of the features it supports crashed the account's background work, which started again after a pause with the account shown offline meanwhile, and the message stayed in the outbox ([GHSA-23wm-4vvw-r7p2](https://github.com/lettre/lettre/security/advisories/GHSA-23wm-4vvw-r7p2)); on port 587 that list comes before the connection is encrypted, so anyone on the network path could send it. Sealwax already guarded against the others in its own code: replies slipped in before encryption on port 587, and a message with a bare line break being read as commands.
+- **A server's answer to a sent message is checked more strictly:** an answer of the kind that can only belong to another command (a 3xx) now leaves the send uncertain, so Sealwax asks you to check your Sent folder, where before it was taken as sent.
+
 ## 1.5.2 — 2026-11-17
 
 Conversations as one row in the list.

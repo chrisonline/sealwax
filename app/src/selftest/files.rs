@@ -9,21 +9,24 @@
 //!
 //! | Command | What it does |
 //! | --- | --- |
-//! | `files-add NAME…` | Stores the named samples whole in the first account's Inbox, the first one newest; `files-thread` stores that conversation's four messages (`files-thread-1` … `-4`) |
+//! | `files-add NAME…` | Stores the named samples (and the PGP ones, `selftest::pgp`) whole in the first account's Inbox, the first one newest; `files-thread` stores that conversation's four messages (`files-thread-1` … `-4`) |
 //! | `files-show NAME` | Selects NAME's row in the list and waits until the reader shows its conversation |
 //! | `files-add-text NAME` | Stores a sample as a large message's text parts: its attachments and inline parts empty, their sections recorded, `BodyState::Text` |
-//! | `files-hooks` | Opens attachments under `$TMP/files-open` and records them; Save answers `$TMP/files-saved/<name>`, Download all `$TMP/files-folder` |
+//! | `files-hooks` | Opens attachments under `$TMP/files-open` and records them; Save answers `$TMP/files-saved/<name>`, Download all `$TMP/files-folder`; Open With writes under `$TMP/open-with` |
 //! | `files-answer save\|folder PATH\|cancel` | The next answers of the Save or the folder chooser |
 //! | `files-click N open\|save\|cancel\|retry` | A real click on card N's button (scrolled into view first) |
-//! | `files-click download-all\|show-images\|always\|hide [NAME]` | A real click on that button of the selected message's card, or of NAME's |
+//! | `files-click download-all\|attached-back\|show-images\|always\|hide [NAME]` | A real click on that button of the selected message's card, or of NAME's |
 //! | `files-click original-save\|original-save-rest\|original-retry\|original-close` | A real click on that button of the Show Original dialog |
 //! | `files-print PATH` | Print through the registry, into a PDF at PATH; waits until it is written |
 //! | `assert-files message NAME` | The reader's selected message is the sample NAME |
 //! | `assert-files cards N` | The selected message has N attachment cards |
 //! | `assert-files card N name\|size\|danger\|open\|busy\|failure\|warning VALUE` | What card N shows (`failure`, `warning`: its text contains VALUE; `failure none`) |
 //! | `assert-files opened N` | N attachments were handed to the opener |
+//! | `assert-files shows\|lacks TEXT` | The reader's labels and text views hold TEXT, or don't |
+//! | `assert-files opened-bytes TEXT` | The last opened file holds TEXT (`\n` for a line break) |
+//! | `assert-files attached BOOL`, `assert-files attached-name NAME` | The reader shows an attached message (#40), and its bar names NAME |
 //! | `assert-files opened-file NAME SAMPLE INDEX` | The last one: a 0600 file named NAME in a 0700 folder holding the sample's attachment INDEX |
-//! | `assert-files saved PATH SAMPLE INDEX` | PATH holds the sample's attachment INDEX |
+//! | `assert-files saved PATH SAMPLE INDEX` | PATH holds the sample's attachment INDEX (`SAMPLE/N`: of the message attached as its attachment N) |
 //! | `assert-files eml PATH SAMPLE` | PATH holds the sample's message byte for byte |
 //! | `assert-files folder N` | The Download all folder holds N files |
 //! | `assert-files missing PATH` | Nothing was written at PATH |
@@ -35,14 +38,19 @@
 //! | `assert-files toggle NAME BOOL` | The window action NAME's state (a toggle) |
 //! | `assert-files original open\|cut BOOL`, `assert-files original contains\|lacks\|status TEXT` | The Show Original dialog |
 //! | `assert-files pdf PATH TEXT` | PATH is a PDF with at least one page whose text (`pdftotext`) contains TEXT |
+//! | `assert-files open-with-menu TITLES\|none` | The reader's More menu's Open With items, `\|`-separated, each on its `win.open-with-N` in order |
+//! | `assert-files open-with-palette QUERY TITLES\|none` | The palette, QUERY typed, shows these Open With commands (`\|`-separated), best match first |
+//! | `assert-files open-with-link LINK SAMPLE` | LINK is a symbolic link an Open With command made to the file it was handed: a 0600 file named after SAMPLE's subject in a 0700 folder under `$TMP/open-with` (0700), holding SAMPLE's message byte for byte |
 
 use super::script::boolean;
 use super::{Harness, StepResult, blocking, equal, number};
+use crate::palette::Palette;
 use crate::reader::{FileChoice, Reader, original_dialog, samples};
 use gtk4 as gtk;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use sealwax_domain::attachment::eml_file_name;
 use sealwax_domain::message;
 use sealwax_domain::model::{Flags, FolderRole, MessageId};
 use sealwax_infrastructure::ingest::{self, RawMessage};
@@ -115,6 +123,9 @@ pub(super) fn original_bytes(message: MessageId) -> Option<Vec<u8>> {
 }
 
 fn sample_raw(name: &str, date: i64) -> Result<Vec<u8>, String> {
+    if super::pgp::NAMES.contains(&name) {
+        return super::pgp::sample(name);
+    }
     samples::files_draft(name, date)
         .map(|draft| draft.render())
         .ok_or_else(|| format!("no sample {name}"))
@@ -144,9 +155,40 @@ fn added_raw(name: &str) -> Result<Vec<u8>, String> {
         .ok_or_else(|| format!("files-add {name} first"))
 }
 
-/// The decoded bytes of attachment `index` (0 for the first) of a stored sample.
+/// Every label's and text view's text under `root`, one per line.
+fn widget_text(root: &gtk::Widget) -> String {
+    let mut out = Vec::new();
+    let mut stack = vec![root.clone()];
+    while let Some(widget) = stack.pop() {
+        if !widget.is_visible() {
+            continue;
+        }
+        if let Some(label) = widget.downcast_ref::<gtk::Label>() {
+            out.push(label.text().to_string());
+        } else if let Some(view) = widget.downcast_ref::<gtk::TextView>() {
+            let buffer = view.buffer();
+            out.push(
+                buffer
+                    .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                    .to_string(),
+            );
+        }
+        let mut child = widget.last_child();
+        while let Some(next) = child {
+            child = next.prev_sibling();
+            stack.push(next);
+        }
+    }
+    out.join("\n")
+}
+
+/// The decoded bytes of attachment `index` (0 for the first) of a stored sample; `NAME/N` names
+/// the message attached as the sample's attachment N (#40).
 fn attachment_bytes(name: &str, index: &str) -> Result<Vec<u8>, String> {
-    let raw = added_raw(name)?;
+    let raw = match name.split_once('/') {
+        Some((outer, attached)) => attachment_bytes(outer, attached)?,
+        None => added_raw(name)?,
+    };
     let index = number(index)?;
     let parsed = message::parse(&raw);
     let attachment = parsed
@@ -376,6 +418,7 @@ async fn add_text(harness: &Harness, name: &str) -> StepResult {
 /// `files-hooks`: the opener and the choosers answer with scratch paths.
 fn install_hooks(harness: &Harness) -> StepResult {
     let reader = reader(harness)?;
+    reader.set_open_with_root(&scratch(harness, "open-with"));
     let hooks = Rc::new(Hooks::default());
     let opened = hooks.opened.clone();
     reader.set_file_opener(&scratch(harness, "files-open"), move |path| {
@@ -453,6 +496,9 @@ async fn click(harness: &Harness, args: &[String]) -> StepResult {
         _ => None,
     };
     let widget = match (args[0].as_str(), args.get(1).map(String::as_str)) {
+        ("attached-back", None) => {
+            find(&reader.widget(), "reader-attached-back").ok_or("no attached message's Back")?
+        }
         (which, of) if remote(which).is_some() => {
             let name = remote(which).unwrap_or_default();
             find(&card(&reader, of)?, name)
@@ -556,6 +602,43 @@ async fn check(harness: &Harness, args: &[String]) -> StepResult {
             }
         }
         "opened" => equal("opened", hooks()?.opened.borrow().len(), number(arg(1)?)?),
+        "shows" | "lacks" => {
+            let text = widget_text(&reader.widget());
+            let wanted = args[0] == "shows";
+            if text.contains(arg(1)?) == wanted {
+                Ok(())
+            } else {
+                Err(format!(
+                    "the reader {} {:?}; it shows {text:?}",
+                    if wanted { "lacks" } else { "shows" },
+                    arg(1)?
+                ))
+            }
+        }
+        "opened-bytes" => {
+            let path = hooks()?
+                .opened
+                .borrow()
+                .last()
+                .cloned()
+                .ok_or("nothing was opened")?;
+            let bytes = std::fs::read(&path).map_err(|error| error.to_string())?;
+            equal(
+                "the opened bytes",
+                String::from_utf8_lossy(&bytes).into_owned(),
+                arg(1)?.replace("\\n", "\n"),
+            )
+        }
+        "attached" => equal(
+            "an attached message shown",
+            reader.attached_name().is_some(),
+            boolean(arg(1)?)?,
+        ),
+        "attached-name" => equal(
+            "the attached message's name",
+            reader.attached_name().as_deref(),
+            Some(arg(1)?),
+        ),
         "opened-file" => {
             let path = hooks()?
                 .opened
@@ -749,7 +832,85 @@ async fn check(harness: &Harness, args: &[String]) -> StepResult {
                 Err(format!("the PDF's text lacks {wanted:?}"))
             }
         }
+        "open-with-menu" => {
+            let items = reader.open_with_items();
+            for (index, (_, action)) in items.iter().enumerate() {
+                equal(
+                    "the item's action",
+                    action.as_str(),
+                    format!("win.open-with-{}", index + 1).as_str(),
+                )?;
+            }
+            let titles: Vec<String> = items.into_iter().map(|(title, _)| title).collect();
+            equal(
+                "the More menu's Open With items",
+                joined(&titles),
+                arg(1)?.into(),
+            )
+        }
+        "open-with-palette" => {
+            let window = harness.window()?;
+            let keymap = harness
+                .state
+                .preferences()
+                .map(|prefs| prefs.keymap())
+                .unwrap_or_default();
+            let titles = harness.state.command_titles();
+            let palette = Palette::titled(window.window(), &keymap, None, &move |id| {
+                titles
+                    .iter()
+                    .find(|(candidate, _)| *candidate == id)
+                    .map(|(_, title)| title.clone())
+            });
+            palette.set_query(arg(1)?);
+            let shown: Vec<String> = palette
+                .shown_titles()
+                .into_iter()
+                .filter(|title| title.starts_with("Open With"))
+                .collect();
+            equal(
+                "the palette's Open With commands",
+                joined(&shown),
+                arg(2)?.into(),
+            )
+        }
+        "open-with-link" => {
+            let target = std::fs::read_link(arg(1)?)
+                .map_err(|error| format!("{}: {error}", arg(1).unwrap_or_default()))?;
+            let folder = target.parent().ok_or("the file has no folder")?;
+            let root = scratch(harness, "open-with");
+            equal(
+                "the file's folder is in the Open With folder",
+                folder.parent() == Some(root.as_path()),
+                true,
+            )?;
+            let raw = added_raw(arg(2)?)?;
+            let subject = message::parse(&raw).headers.subject;
+            equal(
+                "the file's name",
+                target.file_name().and_then(|name| name.to_str()),
+                Some(eml_file_name(&subject).as_str()),
+            )?;
+            for (what, path, wanted) in [
+                ("the Open With folder's mode", root.as_path(), "700"),
+                ("the file's folder's mode", folder, "700"),
+                ("the file's mode", target.as_path(), "600"),
+            ] {
+                equal(what, format!("{:o}", mode(path)?), wanted.into())?;
+            }
+            let bytes = std::fs::read(&target).map_err(|error| error.to_string())?;
+            equal("the file holds the original", bytes == raw, true)
+        }
         other => Err(format!("no assert-files {other}")),
+    }
+}
+
+/// Titles as a check names them: `|`-separated, or `none`.
+fn joined(titles: &[String]) -> String {
+    if titles.is_empty() {
+        "none".to_owned()
+    } else {
+        titles.join("|")
     }
 }
 

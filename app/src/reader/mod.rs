@@ -13,6 +13,7 @@
 //! list's position into [`Reader::set_position`] with [`Reader::connect_previous`] and
 //! [`Reader::connect_next`].
 
+mod attached;
 mod attachments;
 mod cards;
 pub(crate) mod commands;
@@ -23,6 +24,8 @@ mod files;
 mod format;
 mod links;
 mod live;
+mod memory;
+mod open_with;
 mod page;
 mod plain;
 mod prepare;
@@ -52,7 +55,8 @@ pub use {
     links::LinkState,
     files::FileChoice,
     plain::{links_in, shown_text},
-    protection::{ENCRYPTED, SIGNED},
+    attached::ATTACHED,
+    protection::{DECRYPTED, ENCRYPTED, SIGNED},
     sealwax_domain::html_scan::scan as scan_html,
     view::{MAX_VIEW_HEIGHT, Refused, WORLD},
 };
@@ -71,11 +75,13 @@ use sealwax_ui_model::keymap::Keymap;
 use sealwax_domain::model::{MessageId, MessageSummary};
 use sealwax_ui_model::theme::{BodyStyle, Rgb, Theme};
 use sealwax_engine::api::{BodyError, Command, Event};
+use sealwax_infrastructure::pgp::Gpg;
 use sealwax_infrastructure::store::ChangeEvent;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use toolbar::Toolbar;
 use widgets::Stage;
@@ -287,6 +293,11 @@ struct Inner {
     hidden: Cell<bool>,
     /// Pages being laid out never finish, for the self-tests ([`Reader::hold_layout`]).
     layout_held: Cell<bool>,
+    /// Decrypted content and attached messages, in memory only (ADR-030).
+    memory: memory::Memory,
+    /// The user's GnuPG, which decrypts and checks signatures (#32); `None` without it, and in
+    /// the Flatpak, which can't reach the user's keyring.
+    gpg: Option<Arc<Gpg>>,
 }
 
 impl Reader {
@@ -348,6 +359,8 @@ impl Reader {
             left: Cell::new(None),
             hidden: Cell::new(false),
             layout_held: Cell::new(false),
+            memory: memory::Memory::default(),
+            gpg: find_gpg(),
         });
         remote::load(&inner);
         let weak = Rc::downgrade(&inner);
@@ -450,11 +463,17 @@ impl Reader {
     /// conversation replaces the shown one when it is ready. A newer `show` or
     /// [`Reader::clear`] cancels it.
     pub fn show(&self, id: MessageId) {
-        self.inner.target.set(Some(id));
-        self.inner.answers.borrow_mut().remove(&id);
-        let generation = self.inner.next_generation();
-        let inner = self.inner.clone();
-        glib::spawn_future_local(async move { inner.load(id, generation).await });
+        // Shown again (a setting changed) an attached message stays; any other closes them.
+        if !memory::is_attached(id) {
+            self.inner.memory.close_attached();
+        }
+        self.inner.show_id(id);
+    }
+
+    /// Back to List (Escape) on an attached message goes back from it instead (#40); `true`
+    /// when it did.
+    pub fn back_from_attached(&self) -> bool {
+        self.inner.back_from_attached()
     }
 
     /// [`Reader::show`] in place of the shown message, the selection having moved on from it
@@ -759,6 +778,13 @@ impl Reader {
         self.inner.engine.refused_downloads()
     }
 
+    /// The name on the attached message's bar, while one is on screen (#40).
+    #[cfg(feature = "test-hooks")]
+    pub fn attached_name(&self) -> Option<String> {
+        let shown = self.message()?;
+        self.inner.memory.attached(shown).map(|attached| attached.name)
+    }
+
     /// What the reader reads through, for the commands on the shown message (M5).
     #[cfg(feature = "test-hooks")]
     pub fn source(&self) -> Rc<dyn MessageSource> {
@@ -825,6 +851,11 @@ impl Reader {
     pub fn set_always_show_images(&self, on: bool) {
         remote::set_always(self, on);
     }
+}
+
+/// The user's `gpg`, outside the Flatpak and outside unit tests (ADR-030).
+fn find_gpg() -> Option<Arc<Gpg>> {
+    crate::pgp::shared()
 }
 
 /// Whether a link may open, and as what: absolute http(s) with a host, or mailto.
@@ -905,6 +936,20 @@ impl Inner {
         let token = self.tokens.get() + 1;
         self.tokens.set(token);
         token
+    }
+
+    /// Shows the conversation of `id`, or the attached message `id`.
+    fn show_id(self: &Rc<Self>, id: MessageId) {
+        self.target.set(Some(id));
+        self.answers.borrow_mut().remove(&id);
+        let generation = self.next_generation();
+        let inner = self.clone();
+        glib::spawn_future_local(async move { inner.load(id, generation).await });
+    }
+
+    /// The key of the page on screen.
+    fn shown_key(&self) -> Option<u64> {
+        self.shown.borrow().as_ref().map(|page| page.key)
     }
 
     /// Runs `apply` on the page `key` names, shown or being laid out.

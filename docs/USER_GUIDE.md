@@ -198,7 +198,15 @@ Allowed images load only over HTTPS and without cookies. A forged From address c
 
 **Print, Show Original, Save as .eml.** **Print…** (Ctrl+P) opens the print dialog with the message and a header (subject, From, To, Cc, Date). **Show Original** (Ctrl+U) shows the message's raw source (its first 512 KiB) with **Save as .eml…**. **Save as .eml…** (Ctrl+S) saves the whole message as a file, suggesting its subject as the name.
 
-**Encrypted and signed mail.** Sealwax 1.0 doesn't decrypt or check PGP and S/MIME. An encrypted message shows "This message is encrypted. Sealwax can't read encrypted mail yet." in place of its body; a signed message shows its content with "Signed · not checked".
+**Open With.** Hand the message to a program of your own, such as a document archive or a script that files it: list the program in `config.toml` ([Open With commands](#open-with-commands)), and **Open With** and its name appear in the reader's **More** menu and the palette. The program gets a copy of the message as the server has it, the same file Save as .eml saves. Not in the Flatpak.
+
+**Encrypted and signed mail (PGP).** Sealwax reads PGP mail with your own GnuPG: your keyring, your gpg-agent and its passphrase prompt (pinentry), hardware keys included. Sealwax keeps no keys and no passphrases. An encrypted message is decrypted when you open it, with "Encrypted · decrypted with your key" above it; its attachments open and save as usual. The decrypted text is never saved: not on disk, not in the server's copy, not in search (so searching doesn't find words inside encrypted mail), and replies don't quote it. When it can't be decrypted, the reader says why: none of your secret keys can open it, or the passphrase was cancelled (with **Try Again**). Show Original and Save as .eml give the message as it came, encrypted.
+
+A signed message has a line above it. **"Signed by Ada Lovelace <ada@example.com> · checked"** means the signature is good and your keyring vouches for the key with the sender's address on it: for that address itself, not only for another name on the same key. Anything less says what's missing: "key not verified" (the signature is good, but you haven't certified the key in GnuPG: check its fingerprint with the sender, then sign it with `gpg --lsign-key`), "not by the sender", "the key isn't in your keyring", "expired", "revoked", or "The signature doesn't match: the message may have been changed". The warnings have a warning sign. Sealwax never fetches keys from a keyserver by itself; import them with GnuPG. In a clear-signed text (the signature at the end of the text itself), only the signed part is shown under the line; anything written around it isn't signed, so it's left out, with "Text outside the signed part isn't shown" under the line. Show Original shows the whole message.
+
+Without GnuPG installed, an encrypted message says to install it and signatures show "Signed · not checked". In the Flatpak, Sealwax can't reach your GnuPG keyring, so it reads no PGP; use the Arch package for that. S/MIME is shown but not decrypted or checked. To send signed or encrypted mail, see [Writing mail](#writing-mail).
+
+**Attached messages.** **Open** on an attached email (a `.eml` attachment, such as a message forwarded as an attachment or the `postacert.eml` inside an Italian certified email, PEC) shows it in the reader: its sender, text and attachments, which open and save as usual. A bar above it says "Attached message" with its name and **Back**; Back, or Escape, goes back to the message it came in. An attached message inside it opens the same way. Remote images stay hidden as in any message. Reply and the list's commands act on the message you selected in the list, not on the attached one; to reply to the attached message's sender, save it and open it in your mail. **Save** still saves the `.eml` file.
 
 ## Grouping mail by sender or domain
 
@@ -312,7 +320,7 @@ The rules' commands have no keys; `keys.toml` can give them one (`edit-rules`, `
 
 **The composer.** **New message** (or `c`, Ctrl+N) opens a composer at the bottom right of the main window, over the mail, as in Gmail. It has:
 
-- the **From** chip: every account's address and its other identities. A new message starts from the account the list shows (in All Inboxes, the selected message's, else the first account's); picking another account's address sends it through that account, which then keeps the draft and its Sent copy;
+- the **From** chip: every account's address and its other identities. A new message starts from the account the list shows (in All Inboxes, the account `[compose]` `default_account` names in `config.toml`, else the selected message's, else the first account's); picking another account's address sends it through that account, which then keeps the draft and its Sent copy;
 - **To**, with **Cc · Bcc** to add those fields; recipients become chips, and suggestions come from the addresses in your mail, people you have written to first;
 - **Subject**;
 - a formatting toolbar: paragraph style (Paragraph, Heading 1–3, Preformatted), bold, italic, underline, strikethrough, bulleted and numbered lists, link, quote, indent, outdent, clear formatting and undo;
@@ -365,6 +373,18 @@ In the file, an image names its file the way a web page does, `<img src="logo.pn
 
 Outgoing mail carries no name of your computer and no Bcc header, and Sealwax adds no "sent with" field.
 
+**Signed and encrypted mail (PGP).** The composer's **Sign** and **Encrypt** buttons, beside Attach File… (also **Sign Message** and **Encrypt Message** in the palette, with no keys by default), sign and encrypt with your own GnuPG, as reading does: your keyring and gpg-agent, passphrases through pinentry, hardware keys included. The message goes as PGP/MIME, which other PGP mail programs read.
+
+- **Encrypt** needs a key in your keyring for every recipient: a key with their address that isn't expired, revoked, disabled or marked as not to be trusted. Keys you haven't verified are used too, and the line under the fields names those recipients ("Key not verified: …"), so you can check the fingerprint with them. When an address has a verified key and unverified ones, the verified one is used; when it has several unverified ones, Send asks which ("Which key for …?"), and the draft remembers your choice. A recipient without a key stops the send, and the composer names them; Sealwax never sends in plain text by itself, so turning Encrypt off is your own step. Your own key is added, so you can read your Sent copy. Bcc recipients are hidden recipients: the message doesn't name their keys.
+- **Sign** uses your secret key for the From address. If you have more than one, name the one to use as `pgp_key` in [accounts.toml](#accountstoml).
+- **The Subject stays readable**, as most mail programs do by default; the text and the attachments are encrypted.
+- **Drafts:** while Encrypt is on, the draft stays on this computer: it isn't saved in the server's Drafts folder, and a copy saved there before is removed. Turn Encrypt off, and it's saved there again.
+- **When it starts on:** off for a new message, unless the account's `pgp_sign` or `pgp_encrypt` says otherwise. A reply to an encrypted message starts with Encrypt on (and Sign, if the message was signed); so does the quick reply, which says so if a key is missing.
+- **Signing asks for your passphrase** when the message goes out, after the 7 seconds of Undo, unless gpg-agent still holds it. If you cancel, the message isn't sent and comes back to your drafts.
+- **Attach My Public Key** (the palette) attaches your public key, as `OpenPGP_0x….asc`, so a recipient can encrypt to you.
+
+It needs GnuPG installed. In the Flatpak, Sealwax can't reach your keyring, so the buttons can't be used; use the Arch package for PGP.
+
 **`mailto:` links.** `sealwax mailto:someone@example.com` opens a composer with the link's address, subject and text; links in your browser do the same once Sealwax is the default mail app. **Make Sealwax the Default Mail App…** (in the palette) says what it changes and how to undo it, and asks first; only an installed Sealwax can be the default. Attachments named in a `mailto:` link are always ignored. `sealwax --compose` opens a new message.
 
 ## Search
@@ -410,7 +430,7 @@ In `config.toml`, `[notifications] show = "count"` shows only "New mail" and how
 
 **Start Sealwax at Login** (a check item in the main menu, and in the palette) asks first, then writes `~/.config/autostart/io.github.pixdevsapps.Sealwax.desktop`, which runs `sealwax --background` at login: Sealwax starts without a window, so mail syncs from the start. Turning it off deletes that file. A change takes effect at your next login. `sealwax --background` does the same by hand.
 
-**The unread count for other programs.** While Sealwax runs, with or without a window, it keeps the number of unread messages in your Inboxes (All Inboxes' number) in `$XDG_RUNTIME_DIR/sealwax/unread.json`, and removes the file when it quits. A bar widget or a script can show it without reading your mail and without starting Sealwax. `sealwax --unread` prints the number, and exits 1 when Sealwax isn't running. The file also gives each account's number, by the account's label (an account without one is "Account 2", never its address). For Omarchy's bar there is a widget in [`contrib/omarchy-plugin`](https://github.com/PixDevsApps/sealwax/tree/main/contrib/omarchy-plugin): Sealwax's icon with the number beside it, nothing at 0, and a click that opens Sealwax ([issue #17](https://github.com/PixDevsApps/sealwax/issues/17)). In the Flatpak the file is in `$XDG_RUNTIME_DIR/app/io.github.pixdevsapps.Sealwax/`.
+**The unread count for other programs.** While Sealwax runs, with or without a window, it keeps the number of unread messages in your Inboxes, the folders under them and your own folders in `$XDG_RUNTIME_DIR/sealwax/unread.json`, and removes the file when it quits; Sent, Drafts, Archive, Junk and Trash, and the folders under them, aren't counted. (All Inboxes in the sidebar still counts the Inboxes alone, so the bar's number can be larger.) A bar widget or a script can show it without reading your mail and without starting Sealwax. `sealwax --unread` prints the number, and exits 1 when Sealwax isn't running. The file also gives each account's number, by the account's label (an account without one is "Account 2", never its address), and each of its folders with unread mail, with the folder's key: `sealwax --folder KEY` (`folder-42`, say, or `all-inboxes`) opens Sealwax on that folder. For Omarchy's bar there is a widget in [`contrib/omarchy-plugin`](https://github.com/PixDevsApps/sealwax/tree/main/contrib/omarchy-plugin): Sealwax's icon with the number beside it, nothing at 0; a click lists the folders with unread mail by account, a click on one opens Sealwax there, and a right click opens Sealwax ([issue #17](https://github.com/PixDevsApps/sealwax/issues/17)). [INSTALL.md](https://github.com/PixDevsApps/sealwax/blob/main/INSTALL.md#unread-count-in-omarchys-bar-optional) has the one line that adds it to the bar. In the Flatpak the file is in `$XDG_RUNTIME_DIR/app/io.github.pixdevsapps.Sealwax/`.
 
 On Omarchy you can open Sealwax with a key binding (SUPER+SHIFT+E, say) and add it to the Omarchy menu: [INTEGRATIONS.md](INTEGRATIONS.md#hyprland) has snippets to paste into your own Hyprland and menu files (Sealwax never edits them itself; the snippets are not tried on a live desktop yet).
 
@@ -475,6 +495,15 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | Messages | Print… | Ctrl+P | list and reader | `print` |
 | Messages | Show Original | Ctrl+U | list and reader | `show-original` |
 | Messages | Save as .eml… | Ctrl+S | list and reader | `save-message` |
+| Messages | Open With 1 | — |  | `open-with-1` |
+| Messages | Open With 2 | — |  | `open-with-2` |
+| Messages | Open With 3 | — |  | `open-with-3` |
+| Messages | Open With 4 | — |  | `open-with-4` |
+| Messages | Open With 5 | — |  | `open-with-5` |
+| Messages | Open With 6 | — |  | `open-with-6` |
+| Messages | Open With 7 | — |  | `open-with-7` |
+| Messages | Open With 8 | — |  | `open-with-8` |
+| Messages | Open With 9 | — |  | `open-with-9` |
 | Messages | Unsubscribe… | — |  | `unsubscribe` |
 | Messages | Pin Sender | — |  | `pin-sender` |
 | Messages | Pin Domain | — |  | `pin-domain` |
@@ -490,6 +519,9 @@ The full keymap, with each command's name in `keys.toml` (a test keeps this tabl
 | Compose | Quick Reply | — |  | `quick-reply` |
 | Compose | Open Reply in Composer | Ctrl+Shift+E | reader | `reply-in-composer` |
 | Compose | Attach File… | — |  | `attach-file` |
+| Compose | Sign Message | — |  | `sign-message` |
+| Compose | Encrypt Message | — |  | `encrypt-message` |
+| Compose | Attach My Public Key | — |  | `attach-public-key` |
 | Compose | Add Cc and Bcc | — |  | `show-cc-bcc` |
 | Compose | Discard Draft | — |  | `discard-draft` |
 | Compose | Close Composer | Ctrl+W | composer | `close-composer` |
@@ -604,6 +636,8 @@ Sealwax has no settings window: its settings are three plain files in `~/.config
 | `[reader]` | `conversation_order` | `"oldest-first"` | `"oldest-first"`, or `"newest-first"` for the latest message on top |
 | | `reply` | `"sender"` | `"sender"`, or `"all"`: Reply answers everyone the message went to, as Reply All does |
 | `[labels]` | a label's name | none (grey) | The label's colour: `"rose"`, `"clay"`, `"olive"`, `"sage"`, `"teal"`, `"slate"`, `"iris"` or `"mauve"` ([Labels](#proton-mail-through-proton-mail-bridge)) |
+| `[compose]` | `default_account` | none | An account's `key` from `accounts.toml`, like `"work"`: a new message from All Inboxes is written from that account, whatever message is selected; without it, from the selected message's account |
+| `[[open_with]]` | `name`, `command` | none | A program the reader's More menu and the palette offer as "Open With" and the name ([below](#open-with-commands)) |
 
 For example:
 
@@ -614,6 +648,28 @@ corner_radius = 8
 [notifications]
 show = "count"
 ```
+
+#### Open With commands
+
+Each `[[open_with]]` table adds **Open With** and its name to the reader's **More** menu (after Save as .eml…) and to the palette. Choosing it hands the message the reader shows to your program ([issue #39](https://github.com/PixDevsApps/sealwax/issues/39)):
+
+```toml
+[[open_with]]
+name = "Archive"
+command = ["my-archiver", "--import", "{file}"]
+
+[[open_with]]
+name = "Summarise"
+command = ["/home/you/bin/summarise", "--input={file}", "--window"]
+```
+
+- **`name`** is shown after "Open With": at most 40 characters, a different one for each table (upper and lower case count as the same).
+- **`command`** is the program, then its arguments, each in its own quotes. Sealwax starts it directly, without a shell: nothing in it is split at spaces, and `~`, `$HOME`, `*`, `|`, `>` and `;` mean nothing special. Where `"{file}"` is written, in one or more arguments, it becomes the path of the message's file; it may be part of an argument, as in `--input={file}`, and a command without it is a mistake. A program given by its name is looked for in the `PATH` Sealwax was started with; give the full path of one that isn't there (not `~/bin/…`). To use a shell's features, make the program a script.
+- **The file** is the message as the server has it, the same bytes as Save as .eml…; a large message Sealwax keeps only as its text is downloaded first. It's named after the subject (`Invoice #2041.eml`), readable by you alone, in a folder of its own under `$XDG_RUNTIME_DIR/io.github.pixdevsapps.Sealwax/open-with/`. Sealwax doesn't wait for the program, because many programs pass the file to a window that is already open and exit at once, so the file stays until Sealwax next starts, which empties the folder; your session also empties it when you log out. Copy the file if you want to keep it.
+- **What you see:** the command works on the one message the reader shows; with several selected it's greyed out. When the program can't be started, a toast says why ("Open With Archive didn't start: Sealwax can't find the program “my-archiver”…"). The program's own output and errors are discarded, and Sealwax doesn't report whether it succeeded: test the command in a terminal first.
+- **Keys:** Open With has no key. `keys.toml` can give the first table one as `open-with-1`, the second `open-with-2`, and so on, up to 9 tables.
+- **Saving the file applies it**, as for every setting: the menu and the palette follow at once.
+- **Not in the Flatpak:** there Sealwax runs in a sandbox and can't start programs installed on your system, so it offers no Open With commands; the tables are read but not shown.
 
 ### keys.toml
 
@@ -658,6 +714,9 @@ address = "board@example.com"
 | | `auth` | `"password"` | `"password"` (a password or app password, kept in the keyring) or `"microsoft"` (Sign in with Microsoft) |
 | | `signature` | none | Plain text put under your messages after a `-- ` line; at most 10,000 characters |
 | | `signature_html` | none | An HTML signature's file in `~/.config/sealwax/signatures/`, such as `"work/signature.html"`; used in place of `signature` when it can be read ([HTML signatures](#writing-mail)) |
+| | `pgp_sign` | `false` | `true`: a new message starts with Sign on ([signed and encrypted mail](#writing-mail)) |
+| | `pgp_encrypt` | `false` | `true`: a new message starts with Encrypt on |
+| | `pgp_key` | your one key for the address | The full fingerprint (40 hexadecimal digits, spaces allowed) of the secret key that signs mail from the account's own address, when you have more than one; identities use the key with their address |
 | `[account.imap]` | `host` | — (required) | The IMAP server |
 | | `port` | 993 with `"tls"`, 143 with `"starttls"` | |
 | | `security` | `"tls"` | `"tls"` or `"starttls"`; there is no setting without encryption |
@@ -745,6 +804,7 @@ Sealwax writes a plain-text log of what it does, never with message content, add
 | Small state (the window's layout and the saved searches in `layout.toml`, the background notice, unfinished account changes) | `~/.local/state/sealwax/` |
 | Cache (the reader's content filters, which Sealwax makes again) | `~/.cache/sealwax/` |
 | Attachments you opened (emptied at the next start and at logout) | `$XDG_RUNTIME_DIR/io.github.pixdevsapps.Sealwax/attachments/` |
+| Messages handed to Open With commands (emptied at the next start and at logout) | `$XDG_RUNTIME_DIR/io.github.pixdevsapps.Sealwax/open-with/` |
 | The unread count for other programs, while Sealwax runs | `$XDG_RUNTIME_DIR/sealwax/unread.json` |
 | Passwords and sign-in tokens | Your keyring, as items with `application` = `io.github.pixdevsapps.Sealwax` |
 | Start Sealwax at Login, when on | `~/.config/autostart/io.github.pixdevsapps.Sealwax.desktop` |

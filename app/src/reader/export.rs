@@ -16,7 +16,7 @@
 
 use super::engine::InlineParts;
 use super::files::{self, Failure};
-use super::prepare::{self, Body};
+use super::prepare::Body;
 use super::view::ViewEvent;
 use super::{Inner, Reader, format, rgba};
 use gtk4 as gtk;
@@ -173,21 +173,14 @@ pub(super) fn print(reader: &Reader) {
     });
 }
 
-/// The stored message and what the reader would show of it.
+/// The message and what the reader shows of it: decrypted, when the reader decrypts it.
 async fn read(inner: &Inner, id: MessageId) -> Result<(MessageDetail, Body), &'static str> {
-    let reads = inner.store.read(id).ok_or("the mail store isn't open")?;
-    let detail = reads
-        .detail
-        .recv()
+    let read = inner
+        .read_message(id)
         .await
-        .ok()
-        .and_then(|versioned| versioned.value)
-        .ok_or("it is no longer here")?;
-    let raw = reads.raw.recv().await.ok().flatten();
-    let for_worker = detail.clone();
-    let prepared = gio::spawn_blocking(move || prepare::prepare(&for_worker, raw.as_deref()))
-        .await
-        .map_err(|_| "it couldn't be read")?;
+        .ok_or("the mail store isn't open")?;
+    let detail = read.detail.ok_or("it is no longer here")?;
+    let prepared = inner.prepare_off_thread(id, &detail, read.raw).await;
     Ok((detail, prepared.body))
 }
 
@@ -206,7 +199,7 @@ async fn print_message(
             InlineParts::default(),
         ),
         Body::Unreadable(unreadable) => (
-            plain_document(super::protection::text(unreadable)),
+            plain_document(&super::protection::text(unreadable)),
             InlineParts::default(),
         ),
     };
@@ -541,10 +534,9 @@ pub(super) fn save_message(reader: &Reader) {
     }
 }
 
-/// Asks where, then saves the bytes the server has (`known` when Show Original already has
-/// them).
-async fn save(inner: Rc<Inner>, id: MessageId, known: Option<Rc<Vec<u8>>>) {
-    let subject = match inner.store.read(id) {
+/// The stored subject of `id`, or nothing.
+pub(super) async fn subject(inner: &Inner, id: MessageId) -> String {
+    match inner.store.read(id) {
         Some(reads) => reads
             .detail
             .recv()
@@ -554,7 +546,13 @@ async fn save(inner: Rc<Inner>, id: MessageId, known: Option<Rc<Vec<u8>>>) {
             .map(|detail| detail.headers.subject)
             .unwrap_or_default(),
         None => String::new(),
-    };
+    }
+}
+
+/// Asks where, then saves the bytes the server has (`known` when Show Original already has
+/// them).
+async fn save(inner: Rc<Inner>, id: MessageId, known: Option<Rc<Vec<u8>>>) {
+    let subject = subject(&inner, id).await;
     let Some(file) = files::choose_save(&inner, "Save Message", &eml_file_name(&subject)).await
     else {
         return;

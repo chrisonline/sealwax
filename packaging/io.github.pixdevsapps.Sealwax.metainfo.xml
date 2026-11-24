@@ -50,6 +50,7 @@
   <url type="help">https://pixdevs.com/guides/sealwax/</url>
   <url type="bugtracker">https://github.com/PixDevsApps/sealwax/issues</url>
   <url type="vcs-browser">https://github.com/PixDevsApps/sealwax</url>
+  <url type="donation">https://github.com/sponsors/PixDevsApps</url>
 
   <categories>
     <category>Network</category>
@@ -103,6 +104,45 @@
   </screenshots>
 
   <releases>
+    <release version="1.6.4" date="2026-11-23" type="stable">
+      <url type="details">https://github.com/PixDevsApps/sealwax/releases/tag/v1.6.4</url>
+      <description>
+        <p>A new message started in All Inboxes can now always come from the account you choose: set default_account under [compose] in config.toml to an account's key, and the message uses that account and its signature whichever message is selected. You can still change From in the message.</p>
+      </description>
+    </release>
+    <release version="1.6.3" date="2026-11-21" type="stable">
+      <url type="details">https://github.com/PixDevsApps/sealwax/releases/tag/v1.6.3</url>
+      <description>
+        <p>The unread count Sealwax shares with bars and scripts now takes in the folders under your Inboxes and your own folders, leaving out Sent, Drafts, Archive, Junk and Trash. In Omarchy's bar, a click on Sealwax's icon lists the folders with unread mail, and a click on one opens Sealwax there.</p>
+      </description>
+    </release>
+    <release version="1.6.2" date="2026-11-19" type="stable">
+      <url type="details">https://github.com/PixDevsApps/sealwax/releases/tag/v1.6.2</url>
+      <description>
+        <p>Files dragged from a file manager onto the composer are attached again on Hyprland, which offers such a drop only as a move. Before, the composer turned the drop down, and over the message text the file went in as its address. The file is always copied, never moved.</p>
+      </description>
+    </release>
+    <release version="1.6.1" date="2026-11-18" type="stable">
+      <url type="details">https://github.com/PixDevsApps/sealwax/releases/tag/v1.6.1</url>
+      <description>
+        <p>Messages can be signed and encrypted with your own GnuPG keyring and gpg-agent, as PGP/MIME. Encrypting needs a key for every recipient and never falls back to plain text, and a draft marked Encrypt stays on your computer.</p>
+        <p>Two fixes to PGP signature checking: a signature is called checked only when your keyring vouches for the sender's own address on the key, and text written around a clear-signed message is no longer shown as signed.</p>
+      </description>
+    </release>
+    <release version="1.6.0" date="2026-11-18" type="stable">
+      <url type="details">https://github.com/PixDevsApps/sealwax/releases/tag/v1.6.0</url>
+      <description>
+        <p>PGP mail is decrypted with your own GnuPG keyring and gpg-agent, and its signatures are checked: a signature is called checked only when your keyring vouches for the sender's key. The decrypted text is never saved or searched.</p>
+        <p>Attached emails, such as a forwarded message or the original inside an Italian certified email (PEC), open in the reader with a way back. A message can be handed to a program of your own with Open With, set up in config.toml.</p>
+      </description>
+    </release>
+    <release version="1.5.3" date="2026-11-17" type="stable">
+      <url type="details">https://github.com/PixDevsApps/sealwax/releases/tag/v1.5.3</url>
+      <description>
+        <p>A security release. Sealwax now sends mail with lettre 0.11.24 instead of its own patched copy. A line of only spaces in a server's list of features could crash an account's background work and take the account offline for a while; that no longer happens.</p>
+        <p>An answer from the server after a sent message that can only belong to another command now leaves the send uncertain, so Sealwax asks you to check your Sent folder.</p>
+      </description>
+    </release>
     <release version="1.5.2" date="2026-11-17" type="stable">
       <url type="details">https://github.com/PixDevsApps/sealwax/releases/tag/v1.5.2</url>
       <description>

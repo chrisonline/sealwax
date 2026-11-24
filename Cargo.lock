@@ -1708,7 +1708,9 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "lettre"
-version = "0.11.23"
+version = "0.11.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f294f3d7cdb313e578acef7d7727d4e8d897e0fcd0d6d58c19959cec95073f19"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -2736,7 +2738,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sealwax"
-version = "1.5.2"
+version = "1.6.4"
 dependencies = [
  "async-channel 2.5.0",
  "clap",
@@ -2755,7 +2757,7 @@ dependencies = [
 
 [[package]]
 name = "sealwax-autodetect-measure"
-version = "1.5.2"
+version = "1.6.4"
 dependencies = [
  "sealwax-domain",
  "sealwax-engine",
@@ -2764,14 +2766,14 @@ dependencies = [
 
 [[package]]
 name = "sealwax-dns-canary"
-version = "1.5.2"
+version = "1.6.4"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "sealwax-domain"
-version = "1.5.2"
+version = "1.6.4"
 dependencies = [
  "ammonia",
  "html2text",
@@ -2789,7 +2791,7 @@ dependencies = [
 
 [[package]]
 name = "sealwax-engine"
-version = "1.5.2"
+version = "1.6.4"
 dependencies = [
  "async-channel 2.5.0",
  "async-imap",
@@ -2825,7 +2827,7 @@ dependencies = [
 
 [[package]]
 name = "sealwax-fixtures"
-version = "1.5.2"
+version = "1.6.4"
 dependencies = [
  "anyhow",
  "encoding_rs",
@@ -2838,7 +2840,7 @@ dependencies = [
 
 [[package]]
 name = "sealwax-infrastructure"
-version = "1.5.2"
+version = "1.6.4"
 dependencies = [
  "async-channel 2.5.0",
  "getrandom 0.4.3",
@@ -2858,7 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "sealwax-ui-model"
-version = "1.5.2"
+version = "1.6.4"
 dependencies = [
  "insta",
  "proptest",
@@ -2868,7 +2870,7 @@ dependencies = [
 
 [[package]]
 name = "sealwax-uitest"
-version = "1.5.2"
+version = "1.6.4"
 dependencies = [
  "async-channel 2.5.0",
  "gio",

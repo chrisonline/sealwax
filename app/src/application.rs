@@ -719,6 +719,14 @@ impl AppState {
         }
     }
 
+    /// Whether the window's command `id` is offered at all, such as an Open With command
+    /// without its `config.toml` entry.
+    pub(crate) fn set_window_available(&self, id: ActionId, available: bool) {
+        if let Some(actions) = self.win_actions.borrow().as_ref() {
+            actions.set_available(id, available);
+        }
+    }
+
     /// The saved searches (1.5.0), as `layout.toml` keeps them.
     pub(crate) fn saved_searches(&self) -> Vec<sealwax_ui_model::layout::SavedSearch> {
         self.layout
@@ -946,6 +954,8 @@ impl AppState {
         }
         if parsed.background {
             self.start_hidden(app);
+        } else if let Some(key) = &parsed.folder {
+            self.show_folder(app, key);
         } else if parsed.compose && parsed.uris.is_empty() {
             self.compose_new(app);
         } else {
@@ -967,6 +977,22 @@ impl AppState {
         if self.window().is_none() {
             self.start_engine_without_window();
         }
+    }
+
+    /// `--folder` (1.6.3): the window on the folder `key`, as the bar widget's list asks. A new
+    /// window opens on it (the view it remembers); a shown one switches to it. A key the
+    /// sidebar doesn't have leaves the window as it was.
+    fn show_folder(self: &Rc<Self>, app: &SealwaxApplication, key: &str) {
+        if let Some(view) = self.mailbox.view_of_key(key) {
+            self.mailbox.set_view(Some(view));
+        }
+        let window = self.window_or_new(app);
+        if self.mailbox.sidebar_model().contains(key) {
+            window.select_folder(key);
+        } else {
+            tracing::info!("--folder names a folder Sealwax doesn't have");
+        }
+        self.present(&window);
     }
 
     /// `--compose` (ML-084): a new message, the window's Compose (from the account the list
@@ -1084,6 +1110,7 @@ impl AppState {
                     reader.labels_recolored();
                 }
             }
+            crate::open_with::apply(self);
             // A client ID added or removed makes Microsoft sign-in available or not.
             setup::refresh();
             self.send_microsoft_client();
@@ -2034,7 +2061,7 @@ impl AppState {
     }
 
     /// Commands' titles where they differ from the registry's, for the palette.
-    fn command_titles(&self) -> Vec<(ActionId, String)> {
+    pub(crate) fn command_titles(&self) -> Vec<(ActionId, String)> {
         let Some(list) = self.list() else {
             return Vec::new();
         };
@@ -2047,6 +2074,7 @@ impl AppState {
             .filter(|(id, title)| *title != id.title())
             .map(|(id, title)| (id, title.to_owned()))
             .chain(crate::rules::titles(self))
+            .chain(crate::open_with::titles(self))
             .chain(reply_all.then(|| (ActionId::Reply, ActionId::ReplyAll.title().to_owned())))
             .collect()
     }
@@ -2081,12 +2109,16 @@ impl AppState {
             );
         }
         let one = matches!(list.reported(), Selected::One(_));
+        let open_with = (1..=sealwax_domain::open_with::MAX_ENTRIES).filter_map(ActionId::open_with);
         for id in [
             ActionId::OpenMessage,
             ActionId::Print,
             ActionId::ShowOriginal,
             ActionId::SaveMessage,
-        ] {
+        ]
+        .into_iter()
+        .chain(open_with)
+        {
             actions.set_applies(id, one);
         }
         actions.set_applies(ActionId::Select, list.model().total() > 0);
@@ -2876,6 +2908,7 @@ impl AppState {
         compose_actions::connect_reader(&reader, window);
         crate::unsubscribe::connect_reader(self, &reader);
         self.reader.replace(Some(reader));
+        crate::open_with::apply(self);
         self.refresh_commands();
     }
 

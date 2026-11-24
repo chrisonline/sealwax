@@ -4,8 +4,9 @@
 //! window through `composer::open`. The quick reply's Send goes through `send_quick`, the seam
 //! phase B wires to the outbox.
 //!
-//! - **Compose** writes from the account the list shows; in All Inboxes from the selected
-//!   message's account, else the first account (`ComposeRequest::New { account: None }`).
+//! - **Compose** writes from the account the list shows; in All Inboxes from `[compose]
+//!   default_account` ([`new_message_account`], issue #43), else the selected message's
+//!   account, else the first account (`ComposeRequest::New { account: None }`).
 //! - **Reply, Reply All, Reply to Sender and Forward** act on one message: in the list the
 //!   selected one; once the reader shows its conversation, the message the user is on there
 //!   ([`Reader::current_message`]). They don't apply to several messages, nor to a draft. Reply
@@ -26,6 +27,7 @@ use crate::window::Window;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use sealwax_domain::compose::protect::Problem;
 use sealwax_domain::compose::{Draft, ReplyKind};
 use sealwax_domain::config::DefaultReply;
 use sealwax_domain::model::{AccountId, DraftId, Folder, FolderId, FolderRole, MessageId};
@@ -158,7 +160,12 @@ fn request_for(state: &AppState, id: ActionId) -> Option<ComposeRequest> {
                 .selected_targets()
                 .ok()
                 .and_then(|targets| targets.first().map(|target| target.folder));
-            let account = compose_account(list.scope(), selected, &state.mailbox().folders());
+            let account = new_message_account(
+                list.scope(),
+                selected,
+                &state.mailbox().folders(),
+                default_account(state),
+            );
             return Some(ComposeRequest::New { account });
         }
         ActionId::EditDraft => {
@@ -229,6 +236,31 @@ pub(crate) fn compose_account(
     }
 }
 
+/// The account a new message is written from: the shown account's; in All Inboxes `default`
+/// (`[compose] default_account`) when there is one, else as [`compose_account`] has it.
+fn new_message_account(
+    scope: Option<ViewScope>,
+    selected: Option<FolderId>,
+    folders: &[Folder],
+    default: Option<AccountId>,
+) -> Option<AccountId> {
+    match (scope, default) {
+        (Some(ViewScope::UnifiedInbox), Some(default)) => Some(default),
+        _ => compose_account(scope, selected, folders),
+    }
+}
+
+/// The account `[compose] default_account` names, if the settings are loaded and still list it.
+fn default_account(state: &AppState) -> Option<AccountId> {
+    let key = state.preferences()?.config().compose.default_account?;
+    state
+        .mailbox()
+        .accounts()
+        .into_iter()
+        .find(|account| account.key.as_ref() == Some(&key))
+        .map(|account| account.id)
+}
+
 thread_local! {
     /// Every quick reply Send was asked for while a self-test records, oldest first.
     static QUICK_SENDS: Log<(MessageId, String)> = const { Log::new() };
@@ -268,6 +300,32 @@ async fn send_quick(app: &SealwaxApplication, message: MessageId, text: String) 
         Ok(prepared) => prepared,
         Err(why) => return refuse(&why),
     };
+    // A reply to encrypted mail goes encrypted too (ADR-032); what stands in the way is said
+    // here, before it reaches the outbox.
+    if prepared.draft.protection.any() {
+        let from = prepared.draft.from.email.clone();
+        let configured = prepared
+            .senders
+            .iter()
+            .find(|sender| {
+                sender.account == prepared.draft.account
+                    && sealwax_domain::address::same(&sender.address.email, &from)
+            })
+            .and_then(|sender| sender.pgp_key.clone());
+        if let Err(problem) = crate::pgp::plan(prepared.draft.clone(), configured).await {
+            let _ = backend.discard(prepared.id).await;
+            let why = match problem {
+                Problem::Choose(_) => "A recipient has several keys: open the reply in the \
+                                       composer to pick one."
+                    .to_owned(),
+                problem => format!(
+                    "{}.",
+                    crate::pgp::problem_text(&problem, &from).replacen("Not sent: ", "", 1)
+                ),
+            };
+            return refuse(&why);
+        }
+    }
     if let Err(why) = backend.save(prepared.id, prepared.draft.clone()).await {
         let _ = backend.discard(prepared.id).await;
         return refuse(&why);
@@ -527,5 +585,30 @@ mod tests {
         assert_eq!(compose_account(None, None, &folders), None);
         let gone = Some(ViewScope::Folder(FolderId(9)));
         assert_eq!(compose_account(gone, None, &folders), None);
+    }
+
+    #[test]
+    fn a_default_account_decides_in_all_inboxes_only() {
+        let folders = [
+            folder(1, 1, FolderRole::Inbox),
+            folder(3, 2, FolderRole::Inbox),
+        ];
+        let default = Some(AccountId(1));
+        let all = Some(ViewScope::UnifiedInbox);
+        for selected in [None, Some(FolderId(1)), Some(FolderId(3))] {
+            assert_eq!(
+                new_message_account(all, selected, &folders, default),
+                Some(AccountId(1))
+            );
+        }
+        assert_eq!(
+            new_message_account(all, Some(FolderId(3)), &folders, None),
+            Some(AccountId(2))
+        );
+        let one = Some(ViewScope::Folder(FolderId(3)));
+        assert_eq!(
+            new_message_account(one, None, &folders, default),
+            Some(AccountId(2))
+        );
     }
 }
